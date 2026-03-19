@@ -7,6 +7,18 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class TermSearchItem(BaseModel):
+    id: int = Field(..., examples=[1])
+    term: str = Field(..., examples=["온보딩"])
+    meaning: str = Field(..., examples=["새로운 구성원이 조직과 업무에 적응하는 과정"])
+
+
+class TermSearchResponse(BaseModel):
+    keyword: str = Field(..., examples=["온보딩"])
+    items: list[TermSearchItem] = Field(default_factory=list)
+    total: int = Field(0, examples=[0, 2])
+
+
 class SavedTermItem(BaseModel):
     term_id: int = Field(..., examples=[1])
     term: str = Field(..., examples=["온보딩"])

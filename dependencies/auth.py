@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 
 from app.core.config import get_settings
+from app.core.messages import AUTH_NOT_AUTHENTICATED
 from app.core.security import decode_token
 from schemas.auth import UserPublic
 
@@ -25,7 +26,7 @@ def get_current_user(
     if credentials is None or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail=AUTH_NOT_AUTHENTICATED,
         )
 
     settings = get_settings()
@@ -40,7 +41,7 @@ def get_current_user(
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail=AUTH_NOT_AUTHENTICATED,
         )
 
     user_id = payload.get("sub")
@@ -48,7 +49,7 @@ def get_current_user(
     if not user_id or not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail=AUTH_NOT_AUTHENTICATED,
         )
 
     # Temporary: in later steps, load from DB using user_id.

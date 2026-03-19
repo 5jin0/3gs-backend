@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.messages import MSG_FETCH_SUCCESS
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.saved_term import SavedTerm
 from db.models.term import Term
 from schemas.auth import UserPublic
-from schemas.terms import SavedTermItem, SavedTermsResponse
+from schemas.common import ApiResponse
+from schemas.terms import SavedTermItem, SavedTermsResponse, TermSearchItem, TermSearchResponse
 
 router = APIRouter(
     prefix="/terms",
@@ -23,6 +25,7 @@ router = APIRouter(
 
 @router.get(
     "/search",
+    response_model=ApiResponse[TermSearchResponse],
     summary="Search Pangyo terms (placeholder)",
     responses={
         200: {
@@ -45,7 +48,7 @@ router = APIRouter(
         }
     },
 )
-def search_terms(keyword: str = Query(..., min_length=1, description="Search keyword")) -> dict:
+def search_terms(keyword: str = Query(..., min_length=1, description="Search keyword")) -> ApiResponse[TermSearchResponse]:
     """Placeholder search endpoint.
 
     Later this function will query DB/FTS and return ranked results.
@@ -65,17 +68,17 @@ def search_terms(keyword: str = Query(..., min_length=1, description="Search key
     ]
 
     filtered = [item for item in dummy_items if keyword.lower() in item["term"].lower()]
-
-    return {
-        "keyword": keyword,
-        "items": filtered,
-        "total": len(filtered),
-    }
+    payload = TermSearchResponse(
+        keyword=keyword,
+        items=[TermSearchItem(**item) for item in filtered],
+        total=len(filtered),
+    )
+    return ApiResponse(success=True, data=payload, message=MSG_FETCH_SUCCESS)
 
 
 @router.get(
     "/saved",
-    response_model=SavedTermsResponse,
+    response_model=ApiResponse[SavedTermsResponse],
     summary="Get current user's saved terms",
     responses={
         200: {
@@ -101,14 +104,18 @@ def search_terms(keyword: str = Query(..., min_length=1, description="Search key
 def get_saved_terms(
     current_user: UserPublic = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> SavedTermsResponse:
+) -> ApiResponse[SavedTermsResponse]:
     """Return saved terms for the authenticated user."""
 
     try:
         user_id = int(current_user.id)
     except ValueError:
         # Backward compatibility for older non-numeric test IDs.
-        return SavedTermsResponse(items=[], total=0)
+        return ApiResponse(
+            success=True,
+            data=SavedTermsResponse(items=[], total=0),
+            message=MSG_FETCH_SUCCESS,
+        )
 
     rows = db.execute(
         select(SavedTerm, Term)
@@ -126,5 +133,9 @@ def get_saved_terms(
         )
         for saved, term in rows
     ]
-    return SavedTermsResponse(items=items, total=len(items))
+    return ApiResponse(
+        success=True,
+        data=SavedTermsResponse(items=items, total=len(items)),
+        message=MSG_FETCH_SUCCESS,
+    )
 

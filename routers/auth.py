@@ -11,11 +11,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.messages import (
+    AUTH_EMAIL_ALREADY_REGISTERED,
+    AUTH_INVALID_CREDENTIALS,
+    MSG_FETCH_SUCCESS,
+    MSG_LOGIN_SUCCESS,
+    MSG_REGISTER_SUCCESS,
+)
 from app.core.security import create_access_token, get_password_hash, verify_password
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.user import User
 from schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserPublic
+from schemas.common import ApiResponse
 
 router = APIRouter(
     prefix="/auth",
@@ -46,7 +54,7 @@ def _get_or_create_test_user(db: Session) -> User:
 
 @router.post(
     "/login",
-    response_model=LoginResponse,
+    response_model=ApiResponse[LoginResponse],
     summary="Login (DB-based user authentication)",
     responses={
         200: {
@@ -69,7 +77,7 @@ def _get_or_create_test_user(db: Session) -> User:
         },
     },
 )
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
+def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[LoginResponse]:
     """Authenticate user and return a token.
 
     Temporary flow:
@@ -86,13 +94,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
         else:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
+                detail=AUTH_INVALID_CREDENTIALS,
             )
 
     if not verify_password(payload.password, db_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail=AUTH_INVALID_CREDENTIALS,
         )
 
     settings = get_settings()
@@ -104,16 +112,20 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
         extra_claims={"email": db_user.email},
     )
 
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=UserPublic(id=str(db_user.id), email=db_user.email, created_at=db_user.created_at),
+    return ApiResponse(
+        success=True,
+        data=LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user=UserPublic(id=str(db_user.id), email=db_user.email, created_at=db_user.created_at),
+        ),
+        message=MSG_LOGIN_SUCCESS,
     )
 
 
 @router.get(
     "/me",
-    response_model=UserPublic,
+    response_model=ApiResponse[UserPublic],
     summary="Get current user (temporary)",
     responses={
         200: {
@@ -130,13 +142,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
         },
     },
 )
-def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic:
-    return current_user
+def me(current_user: UserPublic = Depends(get_current_user)) -> ApiResponse[UserPublic]:
+    return ApiResponse(success=True, data=current_user, message=MSG_FETCH_SUCCESS)
 
 
 @router.post(
     "/register",
-    response_model=RegisterResponse,
+    response_model=ApiResponse[RegisterResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
     responses={
@@ -159,14 +171,14 @@ def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic:
         },
     },
 )
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
+def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> ApiResponse[RegisterResponse]:
     """Create a new user account."""
 
     existing_user = db.scalar(select(User).where(User.email == payload.email))
     if existing_user is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail=AUTH_EMAIL_ALREADY_REGISTERED,
         )
 
     new_user = User(
@@ -177,11 +189,16 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> Registe
     db.commit()
     db.refresh(new_user)
 
-    return RegisterResponse(
-        user=UserPublic(
-            id=str(new_user.id),
-            email=new_user.email,
-            created_at=new_user.created_at,
-        )
+    return ApiResponse(
+        success=True,
+        data=RegisterResponse(
+            user=UserPublic(
+                id=str(new_user.id),
+                email=new_user.email,
+                created_at=new_user.created_at,
+            ),
+            message=MSG_REGISTER_SUCCESS,
+        ),
+        message=MSG_REGISTER_SUCCESS,
     )
 

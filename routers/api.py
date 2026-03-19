@@ -2,10 +2,17 @@
 
 from fastapi import APIRouter
 
+from app.core.messages import MSG_OK
+from schemas.common import ApiResponse
+
 router = APIRouter(tags=["root"])
 
 
 @router.get("/")
-def root() -> dict:
-    return {"message": "PangyoPass backend is running"}
+def root() -> ApiResponse[dict]:
+    return ApiResponse(
+        success=True,
+        data={"service": "PangyoPass backend is running"},
+        message=MSG_OK,
+    )
 
