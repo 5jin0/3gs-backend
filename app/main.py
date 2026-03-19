@@ -11,6 +11,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from db.base import Base
+from db.session import engine
 from routers.api import router as root_router
 from routers.auth import router as auth_router
 from routers.health import router as health_router
@@ -25,6 +27,12 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version="0.1.0",
     )
+
+    @app.on_event("startup")
+    def on_startup() -> None:
+        # Creates tables for all imported ORM models.
+        # At this step there are no models yet; this prepares for upcoming steps.
+        Base.metadata.create_all(bind=engine)
 
     # CORS for Next.js frontend (local/dev/prod configurable via env)
     app.add_middleware(

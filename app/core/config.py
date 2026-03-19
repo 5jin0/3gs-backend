@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Example: PP_CORS_ORIGINS='["http://localhost:3000","https://pangyopass.com"]'
     cors_origins: List[str] = ["http://localhost:3000"]
 
+    # Database
+    # SQLite default for local development.
+    # Change via env: PP_DATABASE_URL=postgresql+psycopg://...
+    database_url: str = "sqlite:///./pangyopass.db"
+    db_echo: bool = False
+
     # Security placeholders (used in later steps)
     secret_key: str = "CHANGE_ME"
     algorithm: str = "HS256"
