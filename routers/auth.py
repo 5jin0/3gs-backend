@@ -30,28 +30,6 @@ router = APIRouter(
     tags=["auth"],
 )
 
-
-_TEST_EMAIL = "test@pangyopass.com"
-_TEST_PASSWORD = "password1234"
-
-
-def _get_or_create_test_user(db: Session) -> User:
-    """Ensure a local test user exists for initial frontend integration."""
-
-    existing_user = db.scalar(select(User).where(User.email == _TEST_EMAIL))
-    if existing_user is not None:
-        return existing_user
-
-    new_user = User(
-        email=_TEST_EMAIL,
-        password_hash=hash_password(_TEST_PASSWORD),
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
-
-
 @router.post(
     "/login",
     response_model=ApiResponse[LoginResponse],
@@ -88,20 +66,22 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
 
     db_user = db.scalar(select(User).where(User.email == payload.username_or_email))
     if db_user is None:
-        # Seed one local test account when no user exists yet.
-        if payload.username_or_email == _TEST_EMAIL:
-            db_user = _get_or_create_test_user(db)
-        else:
+        # If user doesn't exist, create it using the provided password.
+        # (Early integration-friendly behavior; later steps can restrict this.)
+        db_user = User(
+            email=payload.username_or_email,
+            password_hash=hash_password(payload.password),
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+    else:
+        # Existing user: verify provided password.
+        if not verify_password(payload.password, db_user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=AUTH_INVALID_CREDENTIALS,
             )
-
-    if not verify_password(payload.password, db_user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=AUTH_INVALID_CREDENTIALS,
-        )
 
     settings = get_settings()
     access_token = create_access_token(
