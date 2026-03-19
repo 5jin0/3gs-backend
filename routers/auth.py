@@ -8,6 +8,8 @@ This router will host:
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.core.config import get_settings
+from app.core.security import create_access_token
 from schemas.auth import LoginRequest, LoginResponse, UserPublic
 
 router = APIRouter(
@@ -32,7 +34,7 @@ _TEST_PASSWORD = "password1234"
             "content": {
                 "application/json": {
                     "example": {
-                        "access_token": "test-access-token",
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                         "token_type": "bearer",
                         "user": {"id": "user_1", "email": "test@pangyopass.com"},
                     }
@@ -60,8 +62,17 @@ def login(payload: LoginRequest) -> LoginResponse:
             detail="Invalid email or password",
         )
 
+    settings = get_settings()
+    access_token = create_access_token(
+        subject=_TEST_USER_ID,
+        secret_key=settings.secret_key,
+        algorithm=settings.algorithm,
+        expires_minutes=settings.access_token_expire_minutes,
+        extra_claims={"email": _TEST_EMAIL},
+    )
+
     return LoginResponse(
-        access_token="test-access-token",
+        access_token=access_token,
         token_type="bearer",
         user=UserPublic(id=_TEST_USER_ID, email=_TEST_EMAIL),
     )
