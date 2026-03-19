@@ -5,4 +5,4 @@ email-validator
 python-jose[cryptography]
 sqlalchemy
 passlib[bcrypt]
-bcrypt
+bcrypt==4.1.3

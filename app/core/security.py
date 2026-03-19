@@ -12,9 +12,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from jose import jwt
-from passlib.context import CryptContext
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 
 def create_access_token(
@@ -79,22 +78,26 @@ def decode_token(*, token: str, secret_key: str, algorithm: str) -> Dict[str, An
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a plaintext password using bcrypt."""
+    """Hash a plaintext password using bcrypt.
 
-    return _pwd_context.hash(password)
+    Note: bcrypt limits input to 72 bytes. We deterministically truncate to
+    72 bytes to avoid runtime crashes for long passwords.
+    """
+
+    password_bytes = password.encode("utf-8")[:72]
+    hashed = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password using bcrypt.
-
-    Alias for `get_password_hash` to match the expected interface.
-    """
+    """Alias for `get_password_hash` (kept for step-wise compatibility)."""
 
     return get_password_hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify plaintext password against bcrypt hash."""
+    """Verify plaintext password against a bcrypt hash string."""
 
-    return _pwd_context.verify(plain_password, hashed_password)
+    plain_password_bytes = plain_password.encode("utf-8")[:72]
+    return bcrypt.checkpw(plain_password_bytes, hashed_password.encode("utf-8"))
 
