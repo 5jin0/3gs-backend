@@ -15,7 +15,7 @@ from app.core.security import create_access_token, get_password_hash, verify_pas
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.user import User
-from schemas.auth import LoginRequest, LoginResponse, UserPublic
+from schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserPublic
 
 router = APIRouter(
     prefix="/auth",
@@ -132,4 +132,56 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
 )
 def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic:
     return current_user
+
+
+@router.post(
+    "/register",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+    responses={
+        201: {
+            "description": "User created",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "user": {"id": "2", "email": "new-user@pangyopass.com"},
+                        "message": "User registered successfully",
+                    }
+                }
+            },
+        },
+        409: {
+            "description": "Email already exists",
+            "content": {
+                "application/json": {"example": {"detail": "Email already registered"}}
+            },
+        },
+    },
+)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
+    """Create a new user account."""
+
+    existing_user = db.scalar(select(User).where(User.email == payload.email))
+    if existing_user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    new_user = User(
+        email=payload.email,
+        password_hash=get_password_hash(payload.password),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return RegisterResponse(
+        user=UserPublic(
+            id=str(new_user.id),
+            email=new_user.email,
+            created_at=new_user.created_at,
+        )
+    )
 
