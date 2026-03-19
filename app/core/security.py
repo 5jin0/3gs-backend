@@ -12,6 +12,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from jose import jwt
+from passlib.context import CryptContext
+
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(
@@ -50,4 +53,16 @@ def decode_token(*, token: str, secret_key: str, algorithm: str) -> Dict[str, An
     """
 
     return jwt.decode(token, secret_key, algorithms=[algorithm])
+
+
+def get_password_hash(password: str) -> str:
+    """Hash a plaintext password using bcrypt."""
+
+    return _pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify plaintext password against bcrypt hash."""
+
+    return _pwd_context.verify(plain_password, hashed_password)
 

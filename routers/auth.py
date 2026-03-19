@@ -6,15 +6,12 @@ This router will host:
 - POST /auth/register (later)
 """
 
-import hashlib
-import hmac
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, get_password_hash, verify_password
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.user import User
@@ -30,27 +27,6 @@ _TEST_EMAIL = "test@pangyopass.com"
 _TEST_PASSWORD = "password1234"
 
 
-def _hash_password(password: str) -> str:
-    """Temporary password hashing.
-
-    Uses SHA-256 for now to keep dependencies minimal at this step.
-    Step 13 will replace this with bcrypt/passlib.
-    """
-
-    digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
-    return f"sha256${digest}"
-
-
-def _verify_password(plain_password: str, stored_password_hash: str) -> bool:
-    """Verify password hash in constant time."""
-
-    if not stored_password_hash.startswith("sha256$"):
-        return False
-
-    expected = _hash_password(plain_password)
-    return hmac.compare_digest(expected, stored_password_hash)
-
-
 def _get_or_create_test_user(db: Session) -> User:
     """Ensure a local test user exists for initial frontend integration."""
 
@@ -60,7 +36,7 @@ def _get_or_create_test_user(db: Session) -> User:
 
     new_user = User(
         email=_TEST_EMAIL,
-        password_hash=_hash_password(_TEST_PASSWORD),
+        password_hash=get_password_hash(_TEST_PASSWORD),
     )
     db.add(new_user)
     db.commit()
@@ -113,7 +89,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
                 detail="Invalid email or password",
             )
 
-    if not _verify_password(payload.password, db_user.password_hash):
+    if not verify_password(payload.password, db_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
