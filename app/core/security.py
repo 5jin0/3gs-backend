@@ -46,6 +46,29 @@ def create_access_token(
     return jwt.encode(to_encode, secret_key, algorithm=algorithm)
 
 
+def create_jwt_access_token(
+    *,
+    subject: str,
+    secret_key: str,
+    algorithm: str,
+    expires_minutes: int,
+    extra_claims: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Create an access token (JWT).
+
+    This is a convenience wrapper to match the expected interface in step-wise
+    development.
+    """
+
+    return create_access_token(
+        subject=subject,
+        secret_key=secret_key,
+        algorithm=algorithm,
+        expires_minutes=expires_minutes,
+        extra_claims=extra_claims,
+    )
+
+
 def decode_token(*, token: str, secret_key: str, algorithm: str) -> Dict[str, Any]:
     """Decode and validate a JWT token.
 

@@ -18,7 +18,7 @@ from app.core.messages import (
     MSG_LOGIN_SUCCESS,
     MSG_REGISTER_SUCCESS,
 )
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import create_jwt_access_token, hash_password, verify_password
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.user import User
@@ -84,7 +84,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
             )
 
     settings = get_settings()
-    access_token = create_access_token(
+    access_token = create_jwt_access_token(
         subject=str(db_user.id),
         secret_key=settings.secret_key,
         algorithm=settings.algorithm,
