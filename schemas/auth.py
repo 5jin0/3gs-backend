@@ -9,24 +9,30 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, EmailStr, Field
 
 
 class UserPublic(BaseModel):
     """Public user fields safe to return to clients."""
 
     id: str = Field(..., examples=["user_123"])
-    email: EmailStr = Field(..., examples=["test@pangyopass.com"])
+    # DB에서는 email을 쓰지만, 프론트에는 "username" 형태로 노출합니다.
+    username: EmailStr = Field(..., examples=["test@pangyopass.com"])
     created_at: Optional[datetime] = Field(None, examples=["2026-03-19T12:34:56Z"])
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr = Field(..., examples=["test@pangyopass.com"])
+    username_or_email: EmailStr = Field(
+        ...,
+        validation_alias=AliasChoices("username", "email"),
+        examples=["test@pangyopass.com"],
+    )
     password: str = Field(..., min_length=1, examples=["password1234"])
 
     model_config = {
         "json_schema_extra": {
             "examples": [
+                {"username": "test@pangyopass.com", "password": "password1234"},
                 {"email": "test@pangyopass.com", "password": "password1234"},
             ]
         }
@@ -44,7 +50,7 @@ class LoginResponse(BaseModel):
                 {
                     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                     "token_type": "bearer",
-                    "user": {"id": "user_123", "email": "test@pangyopass.com"},
+                    "user": {"id": "user_123", "username": "test@pangyopass.com"},
                 }
             ]
         }
@@ -72,7 +78,7 @@ class RegisterResponse(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "user": {"id": "1", "email": "new-user@pangyopass.com"},
+                    "user": {"id": "1", "username": "new-user@pangyopass.com"},
                     "message": "User registered successfully",
                 }
             ]

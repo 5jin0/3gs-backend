@@ -53,5 +53,5 @@ def get_current_user(
         )
 
     # Temporary: in later steps, load from DB using user_id.
-    return UserPublic(id=str(user_id), email=str(email))
+    return UserPublic(id=str(user_id), username=str(email))
 

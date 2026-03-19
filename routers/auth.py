@@ -64,7 +64,7 @@ def _get_or_create_test_user(db: Session) -> User:
                     "example": {
                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                         "token_type": "bearer",
-                        "user": {"id": "user_1", "email": "test@pangyopass.com"},
+                        "user": {"id": "user_1", "username": "test@pangyopass.com"},
                     }
                 }
             },
@@ -86,10 +86,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
     - issue JWT token on success
     """
 
-    db_user = db.scalar(select(User).where(User.email == payload.email))
+    db_user = db.scalar(select(User).where(User.email == payload.username_or_email))
     if db_user is None:
         # Seed one local test account when no user exists yet.
-        if payload.email == _TEST_EMAIL:
+        if payload.username_or_email == _TEST_EMAIL:
             db_user = _get_or_create_test_user(db)
         else:
             raise HTTPException(
@@ -117,7 +117,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
         data=LoginResponse(
             access_token=access_token,
             token_type="bearer",
-            user=UserPublic(id=str(db_user.id), email=db_user.email, created_at=db_user.created_at),
+            user=UserPublic(id=str(db_user.id), username=db_user.email, created_at=db_user.created_at),
         ),
         message=MSG_LOGIN_SUCCESS,
     )
@@ -132,7 +132,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
             "description": "Current user",
             "content": {
                 "application/json": {
-                    "example": {"id": "user_1", "email": "test@pangyopass.com"}
+                    "example": {"id": "user_1", "username": "test@pangyopass.com"}
                 }
             },
         },
@@ -157,7 +157,7 @@ def me(current_user: UserPublic = Depends(get_current_user)) -> ApiResponse[User
             "content": {
                 "application/json": {
                     "example": {
-                        "user": {"id": "2", "email": "new-user@pangyopass.com"},
+                        "user": {"id": "2", "username": "new-user@pangyopass.com"},
                         "message": "User registered successfully",
                     }
                 }
@@ -194,7 +194,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> ApiResp
         data=RegisterResponse(
             user=UserPublic(
                 id=str(new_user.id),
-                email=new_user.email,
+                username=new_user.email,
                 created_at=new_user.created_at,
             ),
             message=MSG_REGISTER_SUCCESS,
