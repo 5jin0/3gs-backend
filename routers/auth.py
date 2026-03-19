@@ -6,11 +6,18 @@ This router will host:
 - POST /auth/register (later)
 """
 
+import hashlib
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import create_access_token
 from dependencies.auth import get_current_user
+from dependencies.db import get_db
+from db.models.user import User
 from schemas.auth import LoginRequest, LoginResponse, UserPublic
 
 router = APIRouter(
@@ -19,16 +26,52 @@ router = APIRouter(
 )
 
 
-# Temporary hard-coded account (no DB yet)
-_TEST_USER_ID = "user_1"
 _TEST_EMAIL = "test@pangyopass.com"
 _TEST_PASSWORD = "password1234"
+
+
+def _hash_password(password: str) -> str:
+    """Temporary password hashing.
+
+    Uses SHA-256 for now to keep dependencies minimal at this step.
+    Step 13 will replace this with bcrypt/passlib.
+    """
+
+    digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
+
+
+def _verify_password(plain_password: str, stored_password_hash: str) -> bool:
+    """Verify password hash in constant time."""
+
+    if not stored_password_hash.startswith("sha256$"):
+        return False
+
+    expected = _hash_password(plain_password)
+    return hmac.compare_digest(expected, stored_password_hash)
+
+
+def _get_or_create_test_user(db: Session) -> User:
+    """Ensure a local test user exists for initial frontend integration."""
+
+    existing_user = db.scalar(select(User).where(User.email == _TEST_EMAIL))
+    if existing_user is not None:
+        return existing_user
+
+    new_user = User(
+        email=_TEST_EMAIL,
+        password_hash=_hash_password(_TEST_PASSWORD),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 
 @router.post(
     "/login",
     response_model=LoginResponse,
-    summary="Login (temporary, hard-coded user)",
+    summary="Login (DB-based user authentication)",
     responses={
         200: {
             "description": "Login success",
@@ -50,14 +93,27 @@ _TEST_PASSWORD = "password1234"
         },
     },
 )
-def login(payload: LoginRequest) -> LoginResponse:
+def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
     """Authenticate user and return a token.
 
-    NOTE: This is a placeholder implementation for early frontend integration.
-    We'll replace this with DB lookup + password hash verification + JWT later.
+    Temporary flow:
+    - query user by email from DB
+    - verify password hash
+    - issue JWT token on success
     """
 
-    if payload.email != _TEST_EMAIL or payload.password != _TEST_PASSWORD:
+    db_user = db.scalar(select(User).where(User.email == payload.email))
+    if db_user is None:
+        # Seed one local test account when no user exists yet.
+        if payload.email == _TEST_EMAIL:
+            db_user = _get_or_create_test_user(db)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+            )
+
+    if not _verify_password(payload.password, db_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -65,17 +121,17 @@ def login(payload: LoginRequest) -> LoginResponse:
 
     settings = get_settings()
     access_token = create_access_token(
-        subject=_TEST_USER_ID,
+        subject=str(db_user.id),
         secret_key=settings.secret_key,
         algorithm=settings.algorithm,
         expires_minutes=settings.access_token_expire_minutes,
-        extra_claims={"email": _TEST_EMAIL},
+        extra_claims={"email": db_user.email},
     )
 
     return LoginResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserPublic(id=_TEST_USER_ID, email=_TEST_EMAIL),
+        user=UserPublic(id=str(db_user.id), email=db_user.email, created_at=db_user.created_at),
     )
 
 
