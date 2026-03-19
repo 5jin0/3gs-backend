@@ -6,20 +6,17 @@ This router will host:
 - POST /auth/register (later)
 """
 
-from fastapi import APIRouter, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.config import get_settings
-from app.core.security import create_access_token, decode_token
+from app.core.security import create_access_token
+from dependencies.auth import get_current_user
 from schemas.auth import LoginRequest, LoginResponse, UserPublic
 
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
 )
-
-_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 # Temporary hard-coded account (no DB yet)
@@ -101,42 +98,6 @@ def login(payload: LoginRequest) -> LoginResponse:
         },
     },
 )
-def me(credentials: HTTPAuthorizationCredentials | None = _bearer_scheme) -> UserPublic:
-    """Return the current authenticated user.
-
-    NOTE: This is a placeholder implementation. In later steps we will:
-    - move this logic to a reusable dependency (get_current_user)
-    - load users from DB
-    """
-
-    if credentials is None or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    settings = get_settings()
-    token = credentials.credentials
-
-    try:
-        payload = decode_token(
-            token=token,
-            secret_key=settings.secret_key,
-            algorithm=settings.algorithm,
-        )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    user_id = payload.get("sub")
-    email = payload.get("email")
-    if user_id != _TEST_USER_ID or email != _TEST_EMAIL:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    return UserPublic(id=_TEST_USER_ID, email=_TEST_EMAIL)
+def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic:
+    return current_user
 
