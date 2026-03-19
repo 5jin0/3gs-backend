@@ -61,6 +61,15 @@ def get_password_hash(password: str) -> str:
     return _pwd_context.hash(password)
 
 
+def hash_password(password: str) -> str:
+    """Hash a plaintext password using bcrypt.
+
+    Alias for `get_password_hash` to match the expected interface.
+    """
+
+    return get_password_hash(password)
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify plaintext password against bcrypt hash."""
 

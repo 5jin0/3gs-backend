@@ -18,7 +18,7 @@ from app.core.messages import (
     MSG_LOGIN_SUCCESS,
     MSG_REGISTER_SUCCESS,
 )
-from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.user import User
@@ -44,7 +44,7 @@ def _get_or_create_test_user(db: Session) -> User:
 
     new_user = User(
         email=_TEST_EMAIL,
-        password_hash=get_password_hash(_TEST_PASSWORD),
+        password_hash=hash_password(_TEST_PASSWORD),
     )
     db.add(new_user)
     db.commit()
@@ -183,7 +183,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> ApiResp
 
     new_user = User(
         email=payload.email,
-        password_hash=get_password_hash(payload.password),
+        password_hash=hash_password(payload.password),
     )
     db.add(new_user)
     db.commit()
