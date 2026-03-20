@@ -73,11 +73,26 @@ dependencies/
 db/
   base.py                 # SQLAlchemy Declarative Base
   session.py              # engine/session/get_db
+  seed/                   # 엑셀/CSV → terms 적재 로직 및 문서
   models/
     user.py               # User 모델
     term.py               # Term 모델
     saved_term.py         # SavedTerm(북마크) 모델
+
+scripts/
+  seed_terms.py           # 판교어 사전 시드 CLI
 ```
+
+## 용어(판교어) 시드 적재
+
+엑셀/CSV를 `terms` 테이블에 넣으려면:
+
+```powershell
+py -m pip install -r requirements-seed.txt
+py scripts/seed_terms.py .\path\to\terms.xlsx
+```
+
+상세 컬럼 매핑·`--dry-run`·환경 변수 설명은 [`db/seed/README.md`](db/seed/README.md)를 참고하세요.
 
 ## API 응답 형식
 
