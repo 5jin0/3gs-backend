@@ -33,6 +33,9 @@ py -m pip install -r requirements-seed.txt
 프로젝트 루트에서 (SQLite 기본 경로는 `app/core/config.py`의 `database_url`과 동일):
 
 ```powershell
+# 기본: data/pangyo_terms.csv
+py scripts/seed_terms.py
+
 py scripts/seed_terms.py .\data\pangyo_terms.xlsx
 ```
 

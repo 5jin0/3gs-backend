@@ -89,6 +89,8 @@ scripts/
 
 ```powershell
 py -m pip install -r requirements-seed.txt
+# 기본 CSV: data/pangyo_terms.csv
+py scripts/seed_terms.py
 py scripts/seed_terms.py .\path\to\terms.xlsx
 ```
 

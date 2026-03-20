@@ -32,12 +32,22 @@ REQUIRED_COLUMNS = [COLUMN_TERM, COLUMN_ORIGINAL, COLUMN_DEFINITION, COLUMN_EXAM
 class SeedStats:
     """적재 결과 집계."""
 
+    total_rows: int = 0
     inserted: int = 0
     skipped_duplicate_db: int = 0
     skipped_duplicate_file: int = 0
     skipped_empty_term: int = 0
     skipped_invalid_row: int = 0
     warnings: list[str] = field(default_factory=list)
+
+    @property
+    def skipped_total(self) -> int:
+        return (
+            self.skipped_duplicate_db
+            + self.skipped_duplicate_file
+            + self.skipped_empty_term
+            + self.skipped_invalid_row
+        )
 
 
 def read_terms_file(path: Path) -> pd.DataFrame:
@@ -47,7 +57,11 @@ def read_terms_file(path: Path) -> pd.DataFrame:
     if suffix in {".xlsx", ".xlsm"}:
         return pd.read_excel(path, engine="openpyxl")
     if suffix == ".csv":
-        return pd.read_csv(path, encoding="utf-8-sig")
+        # utf-8-sig: Excel에서 저장한 UTF-8 BOM CSV 대응
+        try:
+            return pd.read_csv(path, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            return pd.read_csv(path, encoding="utf-8")
     raise ValueError(
         f"지원하지 않는 파일 형식입니다: {suffix}. "
         "사용 가능: .xlsx, .xlsm, .csv (구형 .xls는 엑셀에서 .xlsx로 저장해 주세요)"
@@ -78,6 +92,7 @@ def seed_terms_from_dataframe(db: Session, df: pd.DataFrame, *, dry_run: bool = 
 
     df = _normalize_columns(df)
     stats = SeedStats()
+    stats.total_rows = len(df)
 
     existing: set[str] = set(db.scalars(select(Term.term)).all())
     seen_in_file: set[str] = set()

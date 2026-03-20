@@ -3,7 +3,10 @@
 
 프로젝트 루트에서 실행:
 
-    py scripts/seed_terms.py path/to/terms.xlsx
+    py scripts/seed_terms.py
+    py scripts/seed_terms.py data/pangyo_terms.csv
+
+기본 파일: `data/pangyo_terms.csv` (경로 생략 시)
 
 사전 준비:
 
@@ -20,6 +23,8 @@ from pathlib import Path
 
 # 프로젝트 루트를 import 경로에 추가
 ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CSV = ROOT / "data" / "pangyo_terms.csv"
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -28,8 +33,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="판교어 terms 테이블 시드 적재")
     parser.add_argument(
         "file",
+        nargs="?",
         type=Path,
-        help="엑셀(.xlsx, .xlsm) 또는 CSV(.csv) 경로",
+        default=DEFAULT_CSV,
+        help=f"엑셀(.xlsx, .xlsm) 또는 CSV(.csv). 기본: {DEFAULT_CSV}",
     )
     parser.add_argument(
         "--dry-run",
@@ -50,8 +57,9 @@ def main() -> int:
     from db.seed.loader import run_seed_from_path
     from db.session import SessionLocal, engine
 
-    if not args.file.is_file():
-        print(f"오류: 파일이 없습니다 — {args.file.resolve()}", file=sys.stderr)
+    csv_path = args.file.resolve()
+    if not csv_path.is_file():
+        print(f"오류: 파일이 없습니다 — {csv_path}", file=sys.stderr)
         return 1
 
     if not args.no_ensure_schema:
@@ -59,16 +67,19 @@ def main() -> int:
 
     session: Session = SessionLocal()
     try:
-        stats = run_seed_from_path(session, args.file.resolve(), dry_run=args.dry_run)
+        stats = run_seed_from_path(session, csv_path, dry_run=args.dry_run)
     finally:
         session.close()
 
     print("— 시드 결과 —")
-    print(f"  삽입:              {stats.inserted}")
-    print(f"  스킵 (DB에 이미 있음): {stats.skipped_duplicate_db}")
-    print(f"  스킵 (파일 내 중복):   {stats.skipped_duplicate_file}")
-    print(f"  스킵 (용어 비움):      {stats.skipped_empty_term}")
-    print(f"  스킵 (필수값 누락):    {stats.skipped_invalid_row}")
+    print(f"  CSV/파일 총 행 수:     {stats.total_rows}")
+    print(f"  삽입된 행 수:          {stats.inserted}")
+    print(f"  스킵된 행 수 (합계): {stats.skipped_total}")
+    print("    └ 상세:")
+    print(f"       DB 중복(term):      {stats.skipped_duplicate_db}")
+    print(f"       파일 내 중복(term): {stats.skipped_duplicate_file}")
+    print(f"       용어 비움:          {stats.skipped_empty_term}")
+    print(f"       필수값 누락:        {stats.skipped_invalid_row}")
     if args.dry_run:
         print("  (dry-run: 실제 커밋 없음)")
 
