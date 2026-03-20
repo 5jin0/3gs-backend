@@ -35,6 +35,20 @@ class TermSuggestionItem(BaseModel):
     term: str = Field(..., examples=["깃타"])
 
 
+class SearchEventRequest(BaseModel):
+    """Payload for search interaction event logging."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    keyword: str = Field(..., min_length=1, examples=["깃"])
+
+
+class SearchEventResponse(BaseModel):
+    event_id: int = Field(..., examples=[1])
+    event_type: str = Field(..., examples=["search_start", "search_click"])
+    keyword: str = Field(..., examples=["깃"])
+    user_id: int = Field(..., examples=[1])
+
+
 class TermSaveRequest(BaseModel):
     """Save one term to the authenticated user's wordbook."""
 

@@ -16,17 +16,23 @@ from app.core.messages import (
     MSG_FETCH_SUCCESS,
     MSG_INVALID_USER_TOKEN_SUBJECT,
     MSG_SAVED_TERMS_FETCHED,
+    MSG_SEARCH_CLICK_EVENT_SAVED,
+    MSG_SEARCH_START_EVENT_SAVED,
     MSG_TERM_ALREADY_SAVED,
     MSG_TERM_NOT_FOUND,
     MSG_TERM_SAVED,
 )
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
+from db.base import Base
 from db.models.saved_term import SavedTerm
+from db.models.search_event import SearchEvent
 from db.models.term import Term
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
 from schemas.terms import (
+    SearchEventRequest,
+    SearchEventResponse,
     SavedTermItem,
     TermSaveRequest,
     TermSaveResponse,
@@ -40,6 +46,99 @@ router = APIRouter(
     tags=["terms"],
 )
 logger = logging.getLogger(__name__)
+
+
+def _log_search_event(
+    *,
+    event_type: str,
+    body: SearchEventRequest,
+    current_user: UserPublic,
+    db: Session,
+) -> ApiResponse[SearchEventResponse] | JSONResponse:
+    """Persist one search interaction event for the authenticated user."""
+
+    # Ensure new event table exists even when app runs with an older DB file.
+    Base.metadata.create_all(bind=db.get_bind(), tables=[SearchEvent.__table__])
+
+    try:
+        user_id = int(current_user.id)
+    except ValueError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=ApiResponse[SearchEventResponse](
+                success=False,
+                data=None,
+                message=MSG_INVALID_USER_TOKEN_SUBJECT,
+            ).model_dump(mode="json"),
+        )
+
+    keyword = body.keyword.strip()
+    event = SearchEvent(user_id=user_id, event_type=event_type, keyword=keyword)
+    db.add(event)
+    try:
+        db.commit()
+        db.refresh(event)
+    except SQLAlchemyError:
+        db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ApiResponse[SearchEventResponse](
+                success=False,
+                data=None,
+                message="Failed to save search event",
+            ).model_dump(mode="json"),
+        )
+
+    return ApiResponse(
+        success=True,
+        data=SearchEventResponse(
+            event_id=event.id,
+            event_type=event.event_type,
+            keyword=event.keyword,
+            user_id=event.user_id,
+        ),
+        message=(
+            MSG_SEARCH_START_EVENT_SAVED
+            if event_type == "search_start"
+            else MSG_SEARCH_CLICK_EVENT_SAVED
+        ),
+    )
+
+
+@router.post(
+    "/events/search-start",
+    response_model=ApiResponse[SearchEventResponse],
+    summary="Save search-start event",
+)
+def save_search_start_event(
+    body: SearchEventRequest,
+    current_user: UserPublic = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[SearchEventResponse] | JSONResponse:
+    return _log_search_event(
+        event_type="search_start",
+        body=body,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post(
+    "/events/search-click",
+    response_model=ApiResponse[SearchEventResponse],
+    summary="Save search-click event",
+)
+def save_search_click_event(
+    body: SearchEventRequest,
+    current_user: UserPublic = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[SearchEventResponse] | JSONResponse:
+    return _log_search_event(
+        event_type="search_click",
+        body=body,
+        current_user=current_user,
+        db=db,
+    )
 
 
 @router.get(

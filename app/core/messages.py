@@ -20,3 +20,6 @@ MSG_SAVED_TERMS_FETCHED = "Saved terms fetched successfully"
 MSG_TERM_REMOVED_FROM_WORDBOOK = "Term removed from your wordbook"
 MSG_TERM_NOT_IN_WORDBOOK = "This term was not in your wordbook"
 
+MSG_SEARCH_START_EVENT_SAVED = "Search start event saved successfully"
+MSG_SEARCH_CLICK_EVENT_SAVED = "Search click event saved successfully"
+
