@@ -23,6 +23,7 @@ from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.models.saved_term import SavedTerm
 from db.models.term import Term
+from db.models.user_access_event import UserAccessEvent
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
 from schemas.terms import SavedTermItem, TermSaveRequest, TermSaveResponse, TermWordbookRemoveResponse
@@ -32,6 +33,22 @@ router = APIRouter(
     tags=["wordbook"],
 )
 logger = logging.getLogger(__name__)
+
+
+def _log_wordbook_view_event(db: Session, *, user_id: int) -> None:
+    """Best-effort logging for wordbook view events."""
+
+    try:
+        # Ensure availability for older local DB files.
+        from db.base import Base
+
+        Base.metadata.create_all(bind=db.get_bind(), tables=[UserAccessEvent.__table__])
+        db.add(UserAccessEvent(user_id=user_id, event_type="wordbook_view"))
+        db.commit()
+        logger.info("wordbook.view_event saved user_id=%s", user_id)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("wordbook.view_event save failed user_id=%s error=%s", user_id, exc)
 
 
 @router.post(
@@ -188,6 +205,8 @@ def get_wordbook_terms(
         user_id = int(current_user.id)
     except ValueError:
         return ApiResponse(success=True, data=[], message=MSG_SAVED_TERMS_FETCHED)
+
+    _log_wordbook_view_event(db, user_id=user_id)
 
     rows = db.execute(
         select(SavedTerm, Term)

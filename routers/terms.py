@@ -29,6 +29,7 @@ from db.base import Base
 from db.models.saved_term import SavedTerm
 from db.models.search_event import SearchEvent
 from db.models.term import Term
+from db.models.user_access_event import UserAccessEvent
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
 from schemas.terms import (
@@ -539,6 +540,15 @@ def get_saved_terms(
             data=[],
             message=MSG_SAVED_TERMS_FETCHED,
         )
+
+    try:
+        Base.metadata.create_all(bind=db.get_bind(), tables=[UserAccessEvent.__table__])
+        db.add(UserAccessEvent(user_id=user_id, event_type="wordbook_view"))
+        db.commit()
+        logger.info("terms.saved view_event saved user_id=%s", user_id)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("terms.saved view_event save failed user_id=%s error=%s", user_id, exc)
 
     rows = db.execute(
         select(SavedTerm, Term)
