@@ -127,8 +127,9 @@ def get_saved_terms(
     items = [
         SavedTermItem(
             term_id=term.id,
-            term=term.name,
-            meaning=term.meaning,
+            term=term.term,
+            # 목록에서는 엑셀 "뜻" 필드(definition)를 요약으로 노출
+            meaning=term.definition,
             saved_at=saved.created_at,
         )
         for saved, term in rows
