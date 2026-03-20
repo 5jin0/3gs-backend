@@ -49,6 +49,21 @@ class SearchEventResponse(BaseModel):
     user_id: int = Field(..., examples=[1])
 
 
+class SearchLifecycleEventResponse(BaseModel):
+    """Response for search complete/exit analytics events."""
+
+    event_id: int = Field(..., examples=[1])
+    event_type: str = Field(..., examples=["search_complete", "search_exit"])
+    keyword: str = Field(..., examples=["깃타"])
+    user_id: int = Field(..., examples=[1])
+    cohort: str = Field(..., examples=["new_user", "existing_user"])
+    repeat_count: int | None = Field(
+        None,
+        description="Only set for search_complete events",
+        examples=[1, 2],
+    )
+
+
 class TermSaveRequest(BaseModel):
     """Save one term to the authenticated user's wordbook."""
 

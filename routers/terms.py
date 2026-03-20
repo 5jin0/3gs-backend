@@ -5,6 +5,7 @@ real DB-backed search + save/bookmark features.
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
@@ -17,6 +18,8 @@ from app.core.messages import (
     MSG_INVALID_USER_TOKEN_SUBJECT,
     MSG_SAVED_TERMS_FETCHED,
     MSG_SEARCH_CLICK_EVENT_SAVED,
+    MSG_SEARCH_COMPLETE_EVENT_SAVED,
+    MSG_SEARCH_EXIT_EVENT_SAVED,
     MSG_SEARCH_START_EVENT_SAVED,
     MSG_SUGGESTION_SELECT_EVENT_SAVED,
     MSG_TERM_ALREADY_SAVED,
@@ -26,15 +29,19 @@ from app.core.messages import (
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.base import Base
+from db.models.repeat_search_log import RepeatSearchLog
 from db.models.saved_term import SavedTerm
+from db.models.search_analytics_event import SearchAnalyticsEvent
 from db.models.search_event import SearchEvent
 from db.models.term import Term
 from db.models.user_access_event import UserAccessEvent
+from db.models.user import User
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
 from schemas.terms import (
     SearchEventRequest,
     SearchEventResponse,
+    SearchLifecycleEventResponse,
     SavedTermItem,
     TermSaveRequest,
     TermSaveResponse,
@@ -48,6 +55,105 @@ router = APIRouter(
     tags=["terms"],
 )
 logger = logging.getLogger(__name__)
+
+
+def _resolve_user_id(current_user: UserPublic) -> int | None:
+    try:
+        return int(current_user.id)
+    except ValueError:
+        return None
+
+
+def _compute_user_cohort(db: Session, *, user_id: int) -> str:
+    user = db.get(User, user_id)
+    if user is None or user.created_at is None:
+        return "unknown"
+
+    created = user.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return "new_user" if created >= datetime.now(timezone.utc) - timedelta(days=7) else "existing_user"
+
+
+def _save_search_lifecycle_event(
+    *,
+    event_type: str,
+    body: SearchEventRequest,
+    current_user: UserPublic,
+    db: Session,
+) -> ApiResponse[SearchLifecycleEventResponse] | JSONResponse:
+    Base.metadata.create_all(
+        bind=db.get_bind(),
+        tables=[SearchAnalyticsEvent.__table__, RepeatSearchLog.__table__],
+    )
+
+    user_id = _resolve_user_id(current_user)
+    if user_id is None:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=ApiResponse[SearchLifecycleEventResponse](
+                success=False,
+                data=None,
+                message=MSG_INVALID_USER_TOKEN_SUBJECT,
+            ).model_dump(mode="json"),
+        )
+
+    keyword = body.keyword.strip()
+    cohort = _compute_user_cohort(db, user_id=user_id)
+    event = SearchAnalyticsEvent(
+        user_id=user_id,
+        event_type=event_type,
+        cohort=cohort,
+        keyword=keyword,
+    )
+    db.add(event)
+
+    repeat_count: int | None = None
+    if event_type == "search_complete":
+        row = db.execute(
+            select(RepeatSearchLog).where(
+                RepeatSearchLog.user_id == user_id,
+                RepeatSearchLog.keyword == keyword,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = RepeatSearchLog(user_id=user_id, keyword=keyword, repeat_count=1)
+            db.add(row)
+            repeat_count = 1
+        else:
+            row.repeat_count += 1
+            repeat_count = row.repeat_count
+
+    try:
+        db.commit()
+        db.refresh(event)
+    except SQLAlchemyError:
+        db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ApiResponse[SearchLifecycleEventResponse](
+                success=False,
+                data=None,
+                message="Failed to save search lifecycle event",
+            ).model_dump(mode="json"),
+        )
+
+    return ApiResponse(
+        success=True,
+        data=SearchLifecycleEventResponse(
+            event_id=event.id,
+            event_type=event.event_type,
+            keyword=event.keyword,
+            user_id=event.user_id,
+            cohort=event.cohort,
+            repeat_count=repeat_count,
+        ),
+        message=(
+            MSG_SEARCH_COMPLETE_EVENT_SAVED
+            if event_type == "search_complete"
+            else MSG_SEARCH_EXIT_EVENT_SAVED
+        ),
+    )
 
 
 def _log_search_event(
@@ -159,6 +265,42 @@ def save_suggestion_select_event(
 ) -> ApiResponse[SearchEventResponse] | JSONResponse:
     return _log_search_event(
         event_type="suggestion_select",
+        body=body,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post(
+    "/events/search-complete",
+    response_model=ApiResponse[SearchLifecycleEventResponse],
+    summary="Save search-complete event and update repeat-search counter",
+)
+def save_search_complete_event(
+    body: SearchEventRequest,
+    current_user: UserPublic = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[SearchLifecycleEventResponse] | JSONResponse:
+    return _save_search_lifecycle_event(
+        event_type="search_complete",
+        body=body,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post(
+    "/events/search-exit",
+    response_model=ApiResponse[SearchLifecycleEventResponse],
+    summary="Save search-exit event",
+)
+def save_search_exit_event(
+    body: SearchEventRequest,
+    current_user: UserPublic = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[SearchLifecycleEventResponse] | JSONResponse:
+    return _save_search_lifecycle_event(
+        event_type="search_exit",
         body=body,
         current_user=current_user,
         db=db,
