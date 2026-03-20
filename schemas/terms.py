@@ -31,6 +31,10 @@ class TermSearchResponse(BaseModel):
     total: int = Field(0, examples=[0, 2])
 
 
+class TermSuggestionItem(BaseModel):
+    term: str = Field(..., examples=["깃타"])
+
+
 class SavedTermItem(BaseModel):
     term_id: int = Field(..., examples=[1])
     term: str = Field(..., examples=["온보딩"])

@@ -18,13 +18,73 @@ from db.models.saved_term import SavedTerm
 from db.models.term import Term
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
-from schemas.terms import SavedTermItem, SavedTermsResponse, TermSearchItem, TermSearchResponse
+from schemas.terms import (
+    SavedTermItem,
+    SavedTermsResponse,
+    TermSearchItem,
+    TermSearchResponse,
+    TermSuggestionItem,
+)
 
 router = APIRouter(
     prefix="/terms",
     tags=["terms"],
 )
 logger = logging.getLogger(__name__)
+
+
+@router.get(
+    "/suggestions",
+    response_model=ApiResponse[list[TermSuggestionItem]],
+    summary="Autocomplete suggestions for Pangyo terms",
+)
+def suggest_terms(
+    keyword: str = Query("", description="Prefix keyword for term suggestions"),
+    limit: int = Query(10, ge=1, le=20, description="Maximum suggestions to return"),
+    db: Session = Depends(get_db),
+) -> ApiResponse[list[TermSuggestionItem]]:
+    """Return lightweight prefix-matched term suggestions for autocomplete."""
+
+    normalized = keyword.strip()
+    if not normalized:
+        return ApiResponse(
+            success=True,
+            data=[],
+            message="Suggestions fetched successfully",
+        )
+
+    try:
+        rows = db.execute(
+            select(Term.term)
+            .where(Term.term.ilike(f"{normalized}%"))
+            .order_by(func.length(Term.term).asc(), Term.term.asc())
+            .limit(limit)
+        ).all()
+        suggestions = [TermSuggestionItem(term=row[0]) for row in rows]
+        return ApiResponse(
+            success=True,
+            data=suggestions,
+            message="Suggestions fetched successfully",
+        )
+    except SQLAlchemyError as exc:
+        # Legacy SQLite schema compatibility (`name` column on old terms table).
+        logger.warning("terms.suggestions primary query failed: %s", exc)
+        legacy_rows = db.execute(
+            text(
+                "SELECT name "
+                "FROM terms "
+                "WHERE lower(name) LIKE lower(:kw) "
+                "ORDER BY length(name) ASC, name ASC "
+                "LIMIT :limit"
+            ),
+            {"kw": f"{normalized}%", "limit": limit},
+        ).all()
+        suggestions = [TermSuggestionItem(term=row[0]) for row in legacy_rows]
+        return ApiResponse(
+            success=True,
+            data=suggestions,
+            message="Suggestions fetched successfully",
+        )
 
 
 @router.get(
