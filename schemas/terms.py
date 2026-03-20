@@ -55,32 +55,29 @@ class TermSaveResponse(BaseModel):
 
 
 class SavedTermItem(BaseModel):
-    term_id: int = Field(..., examples=[1])
+    """One row in the logged-in user's wordbook (joined SavedTerm + Term)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    term_id: int = Field(
+        ...,
+        description="Primary key of the Term (NOT the saved_terms row id)",
+        examples=[1],
+    )
     term: str = Field(..., examples=["온보딩"])
-    meaning: str = Field(..., examples=["새로운 구성원이 조직과 업무에 적응하는 과정"])
-    saved_at: datetime | None = Field(None, examples=["2026-03-19T12:34:56Z"])
-
-
-class SavedTermsResponse(BaseModel):
-    items: list[SavedTermItem] = Field(default_factory=list)
-    total: int = Field(0, examples=[0, 3])
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {"items": [], "total": 0},
-                {
-                    "items": [
-                        {
-                            "term_id": 1,
-                            "term": "온보딩",
-                            "meaning": "새로운 구성원이 조직과 업무에 적응하는 과정",
-                            "saved_at": "2026-03-19T12:34:56Z",
-                        }
-                    ],
-                    "total": 1,
-                },
-            ]
-        }
-    }
+    original_meaning: str = Field(
+        default="",
+        serialization_alias="originalMeaning",
+        examples=["Onboarding"],
+    )
+    definition: str = Field(
+        ...,
+        examples=["새로운 구성원이 조직과 업무에 적응하는 과정"],
+    )
+    example: str = Field(default="", examples=["신입 온보딩 주간을 진행한다."])
+    saved_at: datetime | None = Field(
+        None,
+        description="When the user saved this term (saved_terms.created_at)",
+        examples=["2026-03-19T12:34:56Z"],
+    )
 

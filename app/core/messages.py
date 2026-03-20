@@ -15,3 +15,5 @@ MSG_TERM_ALREADY_SAVED = "Term is already in your wordbook"
 MSG_TERM_NOT_FOUND = "Term not found"
 MSG_INVALID_USER_TOKEN_SUBJECT = "Invalid user id in token"
 
+MSG_SAVED_TERMS_FETCHED = "Saved terms fetched successfully"
+

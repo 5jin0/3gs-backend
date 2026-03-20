@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.messages import (
     MSG_FETCH_SUCCESS,
     MSG_INVALID_USER_TOKEN_SUBJECT,
+    MSG_SAVED_TERMS_FETCHED,
     MSG_TERM_ALREADY_SAVED,
     MSG_TERM_NOT_FOUND,
     MSG_TERM_SAVED,
@@ -27,7 +28,6 @@ from schemas.auth import UserPublic
 from schemas.common import ApiResponse
 from schemas.terms import (
     SavedTermItem,
-    SavedTermsResponse,
     TermSaveRequest,
     TermSaveResponse,
     TermSearchItem,
@@ -285,23 +285,26 @@ def search_terms(
 
 @router.get(
     "/saved",
-    response_model=ApiResponse[SavedTermsResponse],
-    summary="Get current user's saved terms",
+    response_model=ApiResponse[list[SavedTermItem]],
+    summary="Get current user's saved terms (wordbook)",
     responses={
         200: {
-            "description": "Saved terms list",
+            "description": "Saved terms list (newest save first)",
             "content": {
                 "application/json": {
                     "example": {
-                        "items": [
+                        "success": True,
+                        "data": [
                             {
                                 "term_id": 1,
                                 "term": "온보딩",
-                                "meaning": "새로운 구성원이 조직과 업무에 적응하는 과정",
+                                "originalMeaning": "Onboarding",
+                                "definition": "새로운 구성원이 조직과 업무에 적응하는 과정",
+                                "example": "신입 온보딩 주간을 진행한다.",
                                 "saved_at": "2026-03-19T12:34:56Z",
                             }
                         ],
-                        "total": 1,
+                        "message": "Saved terms fetched successfully",
                     }
                 }
             },
@@ -311,17 +314,17 @@ def search_terms(
 def get_saved_terms(
     current_user: UserPublic = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> ApiResponse[SavedTermsResponse]:
-    """Return saved terms for the authenticated user."""
+) -> ApiResponse[list[SavedTermItem]]:
+    """Return saved terms for the authenticated user (efficient SavedTerm ⋈ Term join)."""
 
     try:
         user_id = int(current_user.id)
     except ValueError:
-        # Backward compatibility for older non-numeric test IDs.
+        # Backward compatibility for older non-numeric JWT subjects.
         return ApiResponse(
             success=True,
-            data=SavedTermsResponse(items=[], total=0),
-            message=MSG_FETCH_SUCCESS,
+            data=[],
+            message=MSG_SAVED_TERMS_FETCHED,
         )
 
     rows = db.execute(
@@ -335,15 +338,16 @@ def get_saved_terms(
         SavedTermItem(
             term_id=term.id,
             term=term.term,
-            # 목록에서는 엑셀 "뜻" 필드(definition)를 요약으로 노출
-            meaning=term.definition,
+            original_meaning=term.original_meaning,
+            definition=term.definition,
+            example=term.example or "",
             saved_at=saved.created_at,
         )
         for saved, term in rows
     ]
     return ApiResponse(
         success=True,
-        data=SavedTermsResponse(items=items, total=len(items)),
-        message=MSG_FETCH_SUCCESS,
+        data=items,
+        message=MSG_SAVED_TERMS_FETCHED,
     )
 
