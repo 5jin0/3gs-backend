@@ -6,8 +6,11 @@ This router will host:
 - POST /auth/register (later)
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -21,6 +24,8 @@ from app.core.messages import (
 from app.core.security import create_jwt_access_token, hash_password, verify_password
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
+from db.base import Base
+from db.models.user_access_event import UserAccessEvent
 from db.models.user import User
 from schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserPublic
 from schemas.common import ApiResponse
@@ -29,6 +34,7 @@ router = APIRouter(
     prefix="/auth",
     tags=["auth"],
 )
+logger = logging.getLogger(__name__)
 
 @router.post(
     "/login",
@@ -91,6 +97,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
         expires_minutes=settings.access_token_expire_minutes,
         extra_claims={"email": db_user.email},
     )
+
+    # Access-event logging must not break login flow.
+    try:
+        Base.metadata.create_all(bind=db.get_bind(), tables=[UserAccessEvent.__table__])
+        db.add(UserAccessEvent(user_id=db_user.id, event_type="login_success"))
+        db.commit()
+        logger.info("auth.access_event saved user_id=%s event_type=login_success", db_user.id)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("auth.access_event save failed user_id=%s error=%s", db_user.id, exc)
 
     return ApiResponse(
         success=True,
