@@ -4,8 +4,10 @@ This module starts with a simple search placeholder and can be expanded to
 real DB-backed search + save/bookmark features.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.messages import MSG_FETCH_SUCCESS
@@ -21,12 +23,13 @@ router = APIRouter(
     prefix="/terms",
     tags=["terms"],
 )
+logger = logging.getLogger(__name__)
 
 
 @router.get(
     "/search",
     response_model=ApiResponse[TermSearchResponse],
-    summary="Search Pangyo terms (placeholder)",
+    summary="Search Pangyo terms",
     responses={
         200: {
             "description": "Search result placeholder",
@@ -48,30 +51,32 @@ router = APIRouter(
         }
     },
 )
-def search_terms(keyword: str = Query(..., min_length=1, description="Search keyword")) -> ApiResponse[TermSearchResponse]:
-    """Placeholder search endpoint.
+def search_terms(
+    keyword: str = Query(..., min_length=1, description="Search keyword"),
+    db: Session = Depends(get_db),
+) -> ApiResponse[TermSearchResponse]:
+    keyword = keyword.strip()
+    total_terms = db.scalar(select(func.count(Term.id))) or 0
+    logger.info("terms.search keyword=%r total_terms=%d", keyword, total_terms)
 
-    Later this function will query DB/FTS and return ranked results.
-    """
+    rows = db.execute(
+        select(Term)
+        .where(Term.term.ilike(f"%{keyword}%"))
+        .order_by(Term.id.asc())
+    ).scalars().all()
+    logger.info("terms.search matched_results=%d", len(rows))
 
-    dummy_items = [
-        {
-            "id": 1,
-            "term": "온보딩",
-            "meaning": "새로운 구성원이 조직과 업무에 적응하는 과정",
-        },
-        {
-            "id": 2,
-            "term": "데일리 스탠드업",
-            "meaning": "매일 짧게 진행하는 진행 상황 공유 미팅",
-        },
-    ]
-
-    filtered = [item for item in dummy_items if keyword.lower() in item["term"].lower()]
     payload = TermSearchResponse(
         keyword=keyword,
-        items=[TermSearchItem(**item) for item in filtered],
-        total=len(filtered),
+        items=[
+            TermSearchItem(
+                id=row.id,
+                term=row.term,
+                meaning=row.definition,
+            )
+            for row in rows
+        ],
+        total=len(rows),
     )
     return ApiResponse(success=True, data=payload, message=MSG_FETCH_SUCCESS)
 
