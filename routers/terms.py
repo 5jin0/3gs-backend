@@ -108,9 +108,16 @@ def save_term_to_wordbook(
 ) -> ApiResponse[TermSaveResponse] | JSONResponse:
     """Persist a bookmark for (current user, term) if it does not already exist."""
 
+    logger.info(
+        "terms.save received term_id=%s current_user_id=%s",
+        body.term_id,
+        current_user.id,
+    )
+
     try:
         user_id = int(current_user.id)
     except ValueError:
+        logger.warning("terms.save invalid current_user.id=%r", current_user.id)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=ApiResponse[TermSaveResponse](
@@ -120,7 +127,21 @@ def save_term_to_wordbook(
             ).model_dump(mode="json"),
         )
 
-    if db.get(Term, body.term_id) is None:
+    try:
+        term_exists = db.get(Term, body.term_id) is not None
+    except SQLAlchemyError as exc:
+        logger.exception("terms.save failed term existence check: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ApiResponse[TermSaveResponse](
+                success=False,
+                data=None,
+                message="Failed to validate term",
+            ).model_dump(mode="json"),
+        )
+
+    if not term_exists:
+        logger.info("terms.save term not found term_id=%s", body.term_id)
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content=ApiResponse[TermSaveResponse](
@@ -130,14 +151,31 @@ def save_term_to_wordbook(
             ).model_dump(mode="json"),
         )
 
-    existing = db.execute(
-        select(SavedTerm).where(
-            SavedTerm.user_id == user_id,
-            SavedTerm.term_id == body.term_id,
+    try:
+        existing = db.execute(
+            select(SavedTerm).where(
+                SavedTerm.user_id == user_id,
+                SavedTerm.term_id == body.term_id,
+            )
+        ).scalar_one_or_none()
+    except SQLAlchemyError as exc:
+        logger.exception("terms.save failed duplicate check: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ApiResponse[TermSaveResponse](
+                success=False,
+                data=None,
+                message="Failed to check saved status",
+            ).model_dump(mode="json"),
         )
-    ).scalar_one_or_none()
 
     if existing is not None:
+        logger.info(
+            "terms.save already saved user_id=%s term_id=%s saved_id=%s",
+            user_id,
+            body.term_id,
+            existing.id,
+        )
         return ApiResponse(
             success=True,
             data=TermSaveResponse(
@@ -154,6 +192,12 @@ def save_term_to_wordbook(
     try:
         db.commit()
         db.refresh(saved)
+        logger.info(
+            "terms.save success user_id=%s term_id=%s saved_id=%s",
+            user_id,
+            body.term_id,
+            saved.id,
+        )
     except IntegrityError:
         db.rollback()
         dup = db.execute(
@@ -162,6 +206,12 @@ def save_term_to_wordbook(
                 SavedTerm.term_id == body.term_id,
             )
         ).scalar_one()
+        logger.info(
+            "terms.save duplicate after race user_id=%s term_id=%s saved_id=%s",
+            user_id,
+            body.term_id,
+            dup.id,
+        )
         return ApiResponse(
             success=True,
             data=TermSaveResponse(
@@ -171,6 +221,17 @@ def save_term_to_wordbook(
                 already_saved=True,
             ),
             message=MSG_TERM_ALREADY_SAVED,
+        )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("terms.save commit failed: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ApiResponse[TermSaveResponse](
+                success=False,
+                data=None,
+                message="Failed to save term",
+            ).model_dump(mode="json"),
         )
 
     return ApiResponse(

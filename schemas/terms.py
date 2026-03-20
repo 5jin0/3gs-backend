@@ -38,7 +38,16 @@ class TermSuggestionItem(BaseModel):
 class TermSaveRequest(BaseModel):
     """Save one term to the authenticated user's wordbook."""
 
-    term_id: int = Field(..., gt=0, examples=[42])
+    model_config = ConfigDict(populate_by_name=True)
+
+    # Accept both `term_id` and camelCase `termId` from clients.
+    term_id: int = Field(
+        ...,
+        gt=0,
+        validation_alias="termId",
+        serialization_alias="term_id",
+        examples=[42],
+    )
 
 
 class TermSaveResponse(BaseModel):
