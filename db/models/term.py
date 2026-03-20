@@ -21,11 +21,15 @@ term 필드:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
+
+if TYPE_CHECKING:
+    from db.models.saved_term import SavedTerm
 
 
 class Term(Base):
@@ -63,4 +67,10 @@ class Term(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    saved_terms: Mapped[list["SavedTerm"]] = relationship(
+        "SavedTerm",
+        back_populates="term",
+        cascade="all, delete-orphan",
     )
