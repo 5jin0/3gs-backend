@@ -84,6 +84,7 @@ def main() -> int:
 def _run_seed(args: argparse.Namespace) -> int:
     """DB 세션을 열고 시드를 수행한다. 예외는 잡아 메시지와 함께 종료 코드를 반환한다."""
     try:
+        from sqlalchemy import text
         from sqlalchemy.exc import SQLAlchemyError
         from sqlalchemy.orm import Session
 
@@ -111,12 +112,64 @@ def _run_seed(args: argparse.Namespace) -> int:
     if args.dry_run:
         _log_info("모드: dry-run (커밋 없음)")
 
+    def ensure_terms_schema_compatible(db: Session) -> None:
+        """Ensure `terms` table matches current Term model columns."""
+
+        required = {"id", "term", "original_meaning", "definition", "example", "created_at", "updated_at"}
+        rows = db.execute(text("PRAGMA table_info(terms)")).all()
+        if not rows:
+            return
+
+        existing = {r[1] for r in rows}
+        if required.issubset(existing):
+            return
+
+        _log_warn(
+            "기존 terms 스키마가 최신 모델과 달라 마이그레이션을 수행합니다 "
+            f"(현재 컬럼: {sorted(existing)})"
+        )
+        db.execute(text("ALTER TABLE terms RENAME TO terms_legacy_backup"))
+        db.execute(
+            text(
+                """
+                CREATE TABLE terms (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    term VARCHAR(500) NOT NULL,
+                    original_meaning TEXT NOT NULL,
+                    definition TEXT NOT NULL,
+                    example TEXT NOT NULL DEFAULT '',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_terms_term ON terms (term)"))
+
+        legacy_cols = {r[1] for r in db.execute(text("PRAGMA table_info(terms_legacy_backup)")).all()}
+        if {"name", "meaning"}.issubset(legacy_cols):
+            db.execute(
+                text(
+                    """
+                    INSERT INTO terms (term, original_meaning, definition, example)
+                    SELECT TRIM(name), TRIM(meaning), TRIM(meaning), ''
+                    FROM terms_legacy_backup
+                    WHERE TRIM(COALESCE(name, '')) <> ''
+                      AND TRIM(COALESCE(meaning, '')) <> ''
+                    """
+                )
+            )
+        db.execute(text("DROP TABLE terms_legacy_backup"))
+        db.commit()
+        _log_info("terms 스키마 마이그레이션 완료")
+
     session: Session = SessionLocal()
     stats = None
     try:
         if not args.no_ensure_schema:
             _log_info("스키마 확인 중 (create_all)…")
             Base.metadata.create_all(bind=engine)
+            ensure_terms_schema_compatible(session)
 
         _log_info("시드 적재 시작…")
         stats = run_seed_from_path(session, csv_path, dry_run=args.dry_run)
@@ -160,7 +213,7 @@ def _run_seed(args: argparse.Namespace) -> int:
             _log_warn(f"... 외 {len(stats.warnings) - 50}건")
 
     _log_success(
-        f"완료 — 삽입 {stats.inserted}건, 스킵 {stats.skipped_total}건"
+        f"완료 - 삽입 {stats.inserted}건, 스킵 {stats.skipped_total}건"
         + (" [dry-run]" if args.dry_run else "")
     )
     return 0
