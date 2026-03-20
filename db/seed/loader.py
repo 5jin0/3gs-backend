@@ -27,6 +27,9 @@ COLUMN_EXAMPLE = "사용 예시"
 
 REQUIRED_COLUMNS = [COLUMN_TERM, COLUMN_ORIGINAL, COLUMN_DEFINITION, COLUMN_EXAMPLE]
 
+# SQLite 바인딩 한도(999 등)를 피하기 위한 IN 절 배치 크기
+_TERM_LOOKUP_BATCH_SIZE = 500
+
 
 @dataclass
 class SeedStats:
@@ -87,14 +90,50 @@ def _cell_str(val: object) -> str:
     return str(val).strip()
 
 
+def _collect_nonempty_terms_from_file(df: pd.DataFrame) -> set[str]:
+    """파일에 한 번이라도 등장하는 비어 있지 않은 용어 문자열만 모은다 (DB 조회 범위 축소)."""
+
+    terms: set[str] = set()
+    for _, row in df.iterrows():
+        t = _cell_str(row[COLUMN_TERM])
+        if t:
+            terms.add(t)
+    return terms
+
+
+def _load_existing_terms_for_set(db: Session, terms: set[str]) -> set[str]:
+    """주어진 용어 집합 중 DB에 이미 존재하는 항목만 조회한다 (전체 테이블 로드 없음)."""
+
+    if not terms:
+        return set()
+
+    existing: set[str] = set()
+    chunk: list[str] = []
+    for t in terms:
+        chunk.append(t)
+        if len(chunk) >= _TERM_LOOKUP_BATCH_SIZE:
+            found = db.scalars(select(Term.term).where(Term.term.in_(chunk))).all()
+            existing.update(found)
+            chunk = []
+    if chunk:
+        found = db.scalars(select(Term.term).where(Term.term.in_(chunk))).all()
+        existing.update(found)
+    return existing
+
+
 def seed_terms_from_dataframe(db: Session, df: pd.DataFrame, *, dry_run: bool = False) -> SeedStats:
-    """DataFrame을 검증한 뒤 `terms`에 삽입 (중복 term 스킵)."""
+    """DataFrame을 검증한 뒤 `terms`에 삽입 (중복 term 스킵).
+
+    반복 실행 안전: 동일 ``term``이 이미 DB에 있으면 삽입하지 않는다.
+    성능: DB 전체를 읽지 않고, 파일에 나온 용어집합에 대해서만 ``IN`` 배치 조회한다.
+    """
 
     df = _normalize_columns(df)
     stats = SeedStats()
     stats.total_rows = len(df)
 
-    existing: set[str] = set(db.scalars(select(Term.term)).all())
+    file_terms = _collect_nonempty_terms_from_file(df)
+    existing_in_db = _load_existing_terms_for_set(db, file_terms)
     seen_in_file: set[str] = set()
 
     to_add: list[Term] = []
@@ -117,7 +156,7 @@ def seed_terms_from_dataframe(db: Session, df: pd.DataFrame, *, dry_run: bool = 
             )
             continue
 
-        if term in existing:
+        if term in existing_in_db:
             stats.skipped_duplicate_db += 1
             continue
         if term in seen_in_file:
@@ -139,13 +178,11 @@ def seed_terms_from_dataframe(db: Session, df: pd.DataFrame, *, dry_run: bool = 
         stats.inserted = len(to_add)
         return stats
 
-    for obj in to_add:
-        db.add(obj)
+    if to_add:
+        db.add_all(to_add)
     db.commit()
 
     stats.inserted = len(to_add)
-    for t in to_add:
-        existing.add(t.term)
 
     return stats
 
