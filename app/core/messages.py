@@ -22,4 +22,5 @@ MSG_TERM_NOT_IN_WORDBOOK = "This term was not in your wordbook"
 
 MSG_SEARCH_START_EVENT_SAVED = "Search start event saved successfully"
 MSG_SEARCH_CLICK_EVENT_SAVED = "Search click event saved successfully"
+MSG_SUGGESTION_SELECT_EVENT_SAVED = "Suggestion select event saved successfully"
 

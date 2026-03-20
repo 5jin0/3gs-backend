@@ -18,6 +18,7 @@ from app.core.messages import (
     MSG_SAVED_TERMS_FETCHED,
     MSG_SEARCH_CLICK_EVENT_SAVED,
     MSG_SEARCH_START_EVENT_SAVED,
+    MSG_SUGGESTION_SELECT_EVENT_SAVED,
     MSG_TERM_ALREADY_SAVED,
     MSG_TERM_NOT_FOUND,
     MSG_TERM_SAVED,
@@ -100,7 +101,11 @@ def _log_search_event(
         message=(
             MSG_SEARCH_START_EVENT_SAVED
             if event_type == "search_start"
-            else MSG_SEARCH_CLICK_EVENT_SAVED
+            else (
+                MSG_SEARCH_CLICK_EVENT_SAVED
+                if event_type == "search_click"
+                else MSG_SUGGESTION_SELECT_EVENT_SAVED
+            )
         ),
     )
 
@@ -135,6 +140,24 @@ def save_search_click_event(
 ) -> ApiResponse[SearchEventResponse] | JSONResponse:
     return _log_search_event(
         event_type="search_click",
+        body=body,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post(
+    "/events/suggestion-select",
+    response_model=ApiResponse[SearchEventResponse],
+    summary="Save suggestion-select event",
+)
+def save_suggestion_select_event(
+    body: SearchEventRequest,
+    current_user: UserPublic = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[SearchEventResponse] | JSONResponse:
+    return _log_search_event(
+        event_type="suggestion_select",
         body=body,
         current_user=current_user,
         db=db,
