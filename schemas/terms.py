@@ -53,14 +53,19 @@ class TermSaveRequest(BaseModel):
 class TermSaveResponse(BaseModel):
     """Result of a wordbook save (new row or existing duplicate)."""
 
-    saved_id: int = Field(..., description="Primary key of saved_terms row", examples=[1])
-    term_id: int = Field(..., examples=[42])
-    user_id: int = Field(..., examples=[1])
+    saved: bool = Field(
+        ...,
+        description="True when a new row was inserted in this request",
+        examples=[True],
+    )
     already_saved: bool = Field(
-        False,
+        ...,
         description="True when this user had already saved this term",
         examples=[False],
     )
+    saved_id: int = Field(..., description="Primary key of saved_terms row", examples=[1])
+    term_id: int = Field(..., examples=[42])
+    user_id: int = Field(..., examples=[1])
 
 
 class TermWordbookRemoveResponse(BaseModel):

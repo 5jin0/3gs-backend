@@ -176,13 +176,23 @@ def save_term_to_wordbook(
             body.term_id,
             existing.id,
         )
+        user_saved_count = db.scalar(
+            select(func.count(SavedTerm.id)).where(SavedTerm.user_id == user_id)
+        ) or 0
+        logger.info(
+            "terms.save duplicate found user_id=%s term_id=%s total_saved_rows=%s",
+            user_id,
+            body.term_id,
+            user_saved_count,
+        )
         return ApiResponse(
             success=True,
             data=TermSaveResponse(
+                saved=False,
+                already_saved=True,
                 saved_id=existing.id,
                 term_id=existing.term_id,
                 user_id=existing.user_id,
-                already_saved=True,
             ),
             message=MSG_TERM_ALREADY_SAVED,
         )
@@ -198,6 +208,15 @@ def save_term_to_wordbook(
             body.term_id,
             saved.id,
         )
+        user_saved_count = db.scalar(
+            select(func.count(SavedTerm.id)).where(SavedTerm.user_id == user_id)
+        ) or 0
+        logger.info(
+            "terms.save commit succeeded user_id=%s term_id=%s total_saved_rows=%s",
+            user_id,
+            body.term_id,
+            user_saved_count,
+        )
     except IntegrityError:
         db.rollback()
         dup = db.execute(
@@ -212,13 +231,23 @@ def save_term_to_wordbook(
             body.term_id,
             dup.id,
         )
+        user_saved_count = db.scalar(
+            select(func.count(SavedTerm.id)).where(SavedTerm.user_id == user_id)
+        ) or 0
+        logger.info(
+            "terms.save race duplicate user_id=%s term_id=%s total_saved_rows=%s",
+            user_id,
+            body.term_id,
+            user_saved_count,
+        )
         return ApiResponse(
             success=True,
             data=TermSaveResponse(
+                saved=False,
+                already_saved=True,
                 saved_id=dup.id,
                 term_id=dup.term_id,
                 user_id=dup.user_id,
-                already_saved=True,
             ),
             message=MSG_TERM_ALREADY_SAVED,
         )
@@ -237,10 +266,11 @@ def save_term_to_wordbook(
     return ApiResponse(
         success=True,
         data=TermSaveResponse(
+            saved=True,
+            already_saved=False,
             saved_id=saved.id,
             term_id=saved.term_id,
             user_id=saved.user_id,
-            already_saved=False,
         ),
         message=MSG_TERM_SAVED,
     )
