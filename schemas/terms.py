@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class TermSearchItem(BaseModel):
@@ -44,7 +44,7 @@ class TermSaveRequest(BaseModel):
     term_id: int = Field(
         ...,
         gt=0,
-        validation_alias="termId",
+        validation_alias=AliasChoices("term_id", "termId"),
         serialization_alias="term_id",
         examples=[42],
     )
