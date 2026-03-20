@@ -29,6 +29,8 @@ from app.core.messages import (
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
 from db.base import Base
+from db.models.wordbook_counter import WordbookCounter
+from db.models.wordbook_save_event import WordbookSaveEvent
 from db.models.repeat_search_log import RepeatSearchLog
 from db.models.saved_term import SavedTerm
 from db.models.search_analytics_event import SearchAnalyticsEvent
@@ -62,6 +64,22 @@ def _resolve_user_id(current_user: UserPublic) -> int | None:
         return int(current_user.id)
     except ValueError:
         return None
+
+
+def _ensure_wordbook_metric_tables(db: Session) -> None:
+    Base.metadata.create_all(
+        bind=db.get_bind(),
+        tables=[WordbookSaveEvent.__table__, WordbookCounter.__table__, UserAccessEvent.__table__],
+    )
+
+
+def _increase_wordbook_counter(db: Session, *, user_id: int, field_name: str) -> None:
+    counter = db.get(WordbookCounter, user_id)
+    if counter is None:
+        counter = WordbookCounter(user_id=user_id)
+        db.add(counter)
+        db.flush()
+    setattr(counter, field_name, int(getattr(counter, field_name)) + 1)
 
 
 def _compute_user_cohort(db: Session, *, user_id: int) -> str:
@@ -393,6 +411,15 @@ def save_term_to_wordbook(
         )
 
     try:
+        _ensure_wordbook_metric_tables(db)
+        db.add(WordbookSaveEvent(user_id=user_id, term_id=body.term_id))
+        _increase_wordbook_counter(db, user_id=user_id, field_name="save_click_count")
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("terms.save click-event save failed user_id=%s term_id=%s error=%s", user_id, body.term_id, exc)
+
+    try:
         term_exists = db.get(Term, body.term_id) is not None
     except SQLAlchemyError as exc:
         logger.exception("terms.save failed term existence check: %s", exc)
@@ -465,6 +492,7 @@ def save_term_to_wordbook(
     saved = SavedTerm(user_id=user_id, term_id=body.term_id)
     db.add(saved)
     try:
+        _increase_wordbook_counter(db, user_id=user_id, field_name="save_success_count")
         db.commit()
         db.refresh(saved)
         logger.info(
@@ -684,8 +712,9 @@ def get_saved_terms(
         )
 
     try:
-        Base.metadata.create_all(bind=db.get_bind(), tables=[UserAccessEvent.__table__])
+        _ensure_wordbook_metric_tables(db)
         db.add(UserAccessEvent(user_id=user_id, event_type="wordbook_view"))
+        _increase_wordbook_counter(db, user_id=user_id, field_name="wordbook_view_count")
         db.commit()
         logger.info("terms.saved view_event saved user_id=%s", user_id)
     except SQLAlchemyError as exc:

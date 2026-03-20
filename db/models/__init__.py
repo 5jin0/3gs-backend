@@ -7,6 +7,8 @@ from db.models.search_event import SearchEvent
 from db.models.term import Term
 from db.models.user_access_event import UserAccessEvent
 from db.models.user import User
+from db.models.wordbook_counter import WordbookCounter
+from db.models.wordbook_save_event import WordbookSaveEvent
 
 __all__ = [
     "User",
@@ -16,5 +18,7 @@ __all__ = [
     "SearchAnalyticsEvent",
     "RepeatSearchLog",
     "UserAccessEvent",
+    "WordbookCounter",
+    "WordbookSaveEvent",
 ]
 

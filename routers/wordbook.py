@@ -21,6 +21,9 @@ from app.core.messages import (
 )
 from dependencies.auth import get_current_user
 from dependencies.db import get_db
+from db.base import Base
+from db.models.wordbook_counter import WordbookCounter
+from db.models.wordbook_save_event import WordbookSaveEvent
 from db.models.saved_term import SavedTerm
 from db.models.term import Term
 from db.models.user_access_event import UserAccessEvent
@@ -35,15 +38,33 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
+def _ensure_wordbook_metric_tables(db: Session) -> None:
+    Base.metadata.create_all(
+        bind=db.get_bind(),
+        tables=[
+            WordbookSaveEvent.__table__,
+            WordbookCounter.__table__,
+            UserAccessEvent.__table__,
+        ],
+    )
+
+
+def _increase_wordbook_counter(db: Session, *, user_id: int, field_name: str) -> None:
+    counter = db.get(WordbookCounter, user_id)
+    if counter is None:
+        counter = WordbookCounter(user_id=user_id)
+        db.add(counter)
+        db.flush()
+    setattr(counter, field_name, int(getattr(counter, field_name)) + 1)
+
+
 def _log_wordbook_view_event(db: Session, *, user_id: int) -> None:
     """Best-effort logging for wordbook view events."""
 
     try:
-        # Ensure availability for older local DB files.
-        from db.base import Base
-
-        Base.metadata.create_all(bind=db.get_bind(), tables=[UserAccessEvent.__table__])
+        _ensure_wordbook_metric_tables(db)
         db.add(UserAccessEvent(user_id=user_id, event_type="wordbook_view"))
+        _increase_wordbook_counter(db, user_id=user_id, field_name="wordbook_view_count")
         db.commit()
         logger.info("wordbook.view_event saved user_id=%s", user_id)
     except SQLAlchemyError as exc:
@@ -81,6 +102,15 @@ def save_term_to_wordbook(
                 message=MSG_INVALID_USER_TOKEN_SUBJECT,
             ).model_dump(mode="json"),
         )
+
+    try:
+        _ensure_wordbook_metric_tables(db)
+        db.add(WordbookSaveEvent(user_id=user_id, term_id=body.term_id))
+        _increase_wordbook_counter(db, user_id=user_id, field_name="save_click_count")
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("wordbook.save click-event save failed user_id=%s term_id=%s error=%s", user_id, body.term_id, exc)
 
     term = db.get(Term, body.term_id)
     if term is None:
@@ -125,6 +155,7 @@ def save_term_to_wordbook(
     saved = SavedTerm(user_id=user_id, term_id=body.term_id)
     db.add(saved)
     try:
+        _increase_wordbook_counter(db, user_id=user_id, field_name="save_success_count")
         db.commit()
         db.refresh(saved)
     except IntegrityError:
