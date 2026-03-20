@@ -54,6 +54,17 @@ class TermSaveResponse(BaseModel):
     )
 
 
+class TermWordbookRemoveResponse(BaseModel):
+    """Result of removing a term from the wordbook (DELETE /wordbook/{term_id})."""
+
+    term_id: int = Field(..., description="Term.id that was targeted", examples=[42])
+    removed: bool = Field(
+        ...,
+        description="True if a saved_terms row existed and was deleted",
+        examples=[True],
+    )
+
+
 class SavedTermItem(BaseModel):
     """One row in the logged-in user's wordbook (joined SavedTerm + Term)."""
 

@@ -18,6 +18,7 @@ from routers.api import router as root_router
 from routers.auth import router as auth_router
 from routers.health import router as health_router
 from routers.terms import router as terms_router
+from routers.wordbook import router as wordbook_router
 
 
 def create_app() -> FastAPI:
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(terms_router)
+    app.include_router(wordbook_router)
 
     return app
 
