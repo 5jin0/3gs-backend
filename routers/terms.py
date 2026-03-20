@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
                                 "id": 1,
                                 "term": "온보딩",
                                 "meaning": "새로운 구성원이 조직과 업무에 적응하는 과정",
+                                "originalMeaning": "Onboarding",
+                                "example": "신입 온보딩 주간을 진행한다.",
                             }
                         ],
                         "total": 1,
@@ -72,6 +74,8 @@ def search_terms(
                 id=row.id,
                 term=row.term,
                 meaning=row.definition,
+                original_meaning=row.original_meaning,
+                example=row.example or "",
             )
             for row in rows
         ]
@@ -94,7 +98,13 @@ def search_terms(
                 {"kw": f"%{keyword}%"},
             ).all()
             items = [
-                TermSearchItem(id=row[0], term=row[1], meaning=row[2])
+                TermSearchItem(
+                    id=row[0],
+                    term=row[1],
+                    meaning=row[2],
+                    original_meaning="",
+                    example="",
+                )
                 for row in legacy_rows
             ]
             logger.info(
