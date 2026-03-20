@@ -7,7 +7,8 @@ real DB-backed search + save/bookmark features.
 import logging
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.messages import MSG_FETCH_SUCCESS
@@ -56,29 +57,62 @@ def search_terms(
     db: Session = Depends(get_db),
 ) -> ApiResponse[TermSearchResponse]:
     keyword = keyword.strip()
-    total_terms = db.scalar(select(func.count(Term.id))) or 0
-    logger.info("terms.search keyword=%r total_terms=%d", keyword, total_terms)
+    try:
+        total_terms = db.scalar(select(func.count(Term.id))) or 0
+        logger.info("terms.search keyword=%r total_terms=%d", keyword, total_terms)
 
-    rows = db.execute(
-        select(Term)
-        .where(Term.term.ilike(f"%{keyword}%"))
-        .order_by(Term.id.asc())
-    ).scalars().all()
-    logger.info("terms.search matched_results=%d", len(rows))
+        rows = db.execute(
+            select(Term)
+            .where(Term.term.ilike(f"%{keyword}%"))
+            .order_by(Term.id.asc())
+        ).scalars().all()
 
-    payload = TermSearchResponse(
-        keyword=keyword,
-        items=[
+        items = [
             TermSearchItem(
                 id=row.id,
                 term=row.term,
                 meaning=row.definition,
             )
             for row in rows
-        ],
-        total=len(rows),
-    )
-    return ApiResponse(success=True, data=payload, message=MSG_FETCH_SUCCESS)
+        ]
+        logger.info("terms.search matched_results=%d", len(items))
+        payload = TermSearchResponse(keyword=keyword, items=items, total=len(items))
+        return ApiResponse(success=True, data=payload, message=MSG_FETCH_SUCCESS)
+    except SQLAlchemyError as exc:
+        # Legacy SQLite schema compatibility:
+        # older DBs may have `terms(name, meaning)` instead of new columns.
+        logger.warning("terms.search primary query failed: %s", exc)
+        try:
+            legacy_total = db.execute(text("SELECT COUNT(*) FROM terms")).scalar_one()
+            legacy_rows = db.execute(
+                text(
+                    "SELECT id, name, meaning "
+                    "FROM terms "
+                    "WHERE lower(name) LIKE lower(:kw) "
+                    "ORDER BY id ASC"
+                ),
+                {"kw": f"%{keyword}%"},
+            ).all()
+            items = [
+                TermSearchItem(id=row[0], term=row[1], meaning=row[2])
+                for row in legacy_rows
+            ]
+            logger.info(
+                "terms.search keyword=%r total_terms=%d matched_results=%d (legacy)",
+                keyword,
+                legacy_total,
+                len(items),
+            )
+            payload = TermSearchResponse(keyword=keyword, items=items, total=len(items))
+            return ApiResponse(success=True, data=payload, message=MSG_FETCH_SUCCESS)
+        except SQLAlchemyError as legacy_exc:
+            logger.error("terms.search legacy query failed: %s", legacy_exc)
+            payload = TermSearchResponse(keyword=keyword, items=[], total=0)
+            return ApiResponse(
+                success=False,
+                data=payload,
+                message="Search failed due to database schema mismatch",
+            )
 
 
 @router.get(
