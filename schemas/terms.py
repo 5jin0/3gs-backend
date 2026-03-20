@@ -35,6 +35,25 @@ class TermSuggestionItem(BaseModel):
     term: str = Field(..., examples=["깃타"])
 
 
+class TermSaveRequest(BaseModel):
+    """Save one term to the authenticated user's wordbook."""
+
+    term_id: int = Field(..., gt=0, examples=[42])
+
+
+class TermSaveResponse(BaseModel):
+    """Result of a wordbook save (new row or existing duplicate)."""
+
+    saved_id: int = Field(..., description="Primary key of saved_terms row", examples=[1])
+    term_id: int = Field(..., examples=[42])
+    user_id: int = Field(..., examples=[1])
+    already_saved: bool = Field(
+        False,
+        description="True when this user had already saved this term",
+        examples=[False],
+    )
+
+
 class SavedTermItem(BaseModel):
     term_id: int = Field(..., examples=[1])
     term: str = Field(..., examples=["온보딩"])
