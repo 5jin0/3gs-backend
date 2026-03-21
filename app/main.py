@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from db.base import Base
 from db import models  # noqa: F401 - ensure ORM models are imported
 from db.session import engine
+from routers.admin import router as admin_router
 from routers.api import router as root_router
 from routers.auth import router as auth_router
 from routers.health import router as health_router
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(root_router)
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(admin_router)
     app.include_router(terms_router)
     app.include_router(wordbook_router)
 
