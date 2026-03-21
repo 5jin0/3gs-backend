@@ -8,12 +8,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.core.messages import MSG_OK
 from dependencies.auth import require_admin
+from dependencies.db import get_db
+from schemas.admin import AdminMetricsOverview
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
+from services.admin_metrics import build_admin_metrics_overview
+from sqlalchemy.orm import Session
 
 AdminUser = Annotated[UserPublic, Depends(require_admin)]
 
@@ -46,3 +50,23 @@ def admin_ping(_: AdminUser) -> ApiResponse[dict]:
 def admin_me(admin: AdminUser) -> ApiResponse[UserPublic]:
     """`require_admin`을 통과한 사용자 정보를 그대로 돌려줍니다."""
     return ApiResponse(success=True, data=admin, message=MSG_OK)
+
+
+@router.get(
+    "/metrics/overview",
+    response_model=ApiResponse[AdminMetricsOverview],
+    summary="대시보드용 메트릭 요약",
+    description="누적(totals) 및 최근 N일(recent, created_at 기준) 집계를 반환합니다.",
+)
+def admin_metrics_overview(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    recent_days: int = Query(
+        7,
+        ge=1,
+        le=365,
+        description="recent 블록에 사용할 일 수 (기본 7일)",
+    ),
+) -> ApiResponse[AdminMetricsOverview]:
+    overview = build_admin_metrics_overview(db, recent_days=recent_days)
+    return ApiResponse(success=True, data=overview, message=MSG_OK)
