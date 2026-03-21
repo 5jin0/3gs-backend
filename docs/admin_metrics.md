@@ -13,7 +13,23 @@
 
 ---
 
-## 엔드포인트 요약
+## Next.js 관리자 분석 API (접두 설정 가능)
+
+기본 URL 접두: **`/admin/analytics`** (환경변수 `PP_ADMIN_ANALYTICS_PREFIX` 로 변경).
+
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | `{prefix}/search-funnel?period=day\|week\|month` | 퍼널 비율(`start_rate`, `click_rate`, …) |
+| GET | `{prefix}/search-ux?period=...` | UX·지연·이탈 등 |
+| GET | `{prefix}/access-cohorts?period=...&group_by=...` | 히트맵 행렬 |
+| GET | `{prefix}/retention?granularity=day\|week\|month` | 리텐션 행렬(가입 코호트: 최근 90일) |
+| GET | `{prefix}/user-saved-counts?page=&page_size=&sort=` | 유저별 저장 횟수 |
+
+스키마: `schemas/admin_analytics_frontend.py`. 구현: `routers/admin_analytics.py`, `services/admin_analytics_frontend.py`.
+
+---
+
+## 엔드포인트 요약 (기존 `/admin/metrics/*` 등)
 
 | Method | Path | 스키마( data 타입 ) | 주요 소스 테이블 |
 |--------|------|---------------------|------------------|

@@ -16,6 +16,7 @@ from db import models  # noqa: F401 - ensure ORM models are imported
 from db.sqlite_migrate import patch_sqlite_schema
 from db.session import engine
 from routers.admin import router as admin_router
+from routers.admin_analytics import router as admin_analytics_router
 from routers.api import router as root_router
 from routers.auth import router as auth_router
 from routers.health import router as health_router
@@ -59,6 +60,10 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(admin_router)
+    app.include_router(
+        admin_analytics_router,
+        prefix=settings.admin_analytics_prefix,
+    )
     app.include_router(terms_router)
     app.include_router(wordbook_router)
 

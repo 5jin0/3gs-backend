@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, asc, desc, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from db.models.saved_term import SavedTerm
@@ -132,6 +132,7 @@ def list_user_save_counts(
     limit: int,
     saved_from: datetime | None,
     saved_to: datetime | None,
+    sort: str = "save_count_desc",
 ) -> AdminUserSaveCountResult:
     """유저별 saved_terms 행 수. 기간 필터는 saved_terms.created_at 기준."""
 
@@ -139,6 +140,17 @@ def list_user_save_counts(
         sf, st = _ensure_utc(saved_from), _ensure_utc(saved_to)
         if sf > st:
             raise ValueError("saved_from must be on or before saved_to")
+
+    allowed_sort = {
+        "save_count_desc",
+        "save_count_asc",
+        "username_asc",
+        "username_desc",
+    }
+    if sort not in allowed_sort:
+        raise ValueError(
+            f"sort must be one of {sorted(allowed_sort)}",
+        )
 
     cond = []
     if saved_from is not None:
@@ -151,27 +163,43 @@ def list_user_save_counts(
         total_stmt = total_stmt.where(and_(*cond))
     total = int(db.scalar(total_stmt) or 0)
 
-    base = select(
+    inner_base = select(
         SavedTerm.user_id,
         func.count(SavedTerm.id).label("save_count"),
         func.min(SavedTerm.created_at).label("first_saved"),
         func.max(SavedTerm.created_at).label("last_saved"),
     )
     if cond:
-        base = base.where(and_(*cond))
+        inner_base = inner_base.where(and_(*cond))
+    inner_base = inner_base.group_by(SavedTerm.user_id)
+    inner = inner_base.subquery()
+
+    order_parts = []
+    if sort == "save_count_desc":
+        order_parts = [desc(inner.c.save_count)]
+    elif sort == "save_count_asc":
+        order_parts = [asc(inner.c.save_count)]
+    elif sort == "username_asc":
+        order_parts = [asc(User.email)]
+    else:
+        order_parts = [desc(User.email)]
+
     agg = (
-        base.group_by(SavedTerm.user_id)
-        .order_by(func.count(SavedTerm.id).desc())
+        select(
+            inner.c.user_id,
+            inner.c.save_count,
+            inner.c.first_saved,
+            inner.c.last_saved,
+            User.email,
+        )
+        .select_from(inner)
+        .join(User, User.id == inner.c.user_id)
+        .order_by(*order_parts)
         .offset(offset)
         .limit(limit)
     )
 
     rows = db.execute(agg).all()
-
-    uids = [int(r[0]) for r in rows]
-    umap: dict[int, User] = {}
-    if uids:
-        umap = {u.id: u for u in db.scalars(select(User).where(User.id.in_(uids))).all()}
 
     items: list[AdminUserSaveCountItem] = []
     for r in rows:
@@ -179,8 +207,7 @@ def list_user_save_counts(
         cnt = int(r[1])
         first_s = r[2]
         last_s = r[3]
-        u = umap.get(uid)
-        email = u.email if u is not None else ""
+        email = str(r[4]) if r[4] is not None else ""
         items.append(
             AdminUserSaveCountItem(
                 user_id=uid,

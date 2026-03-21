@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Next.js 관리자 분석 API 접두 (프론트 NEXT_PUBLIC_ADMIN_ANALYTICS_PREFIX 와 맞출 것)
+    # 예: PP_ADMIN_ANALYTICS_PREFIX=/admin/analytics
+    admin_analytics_prefix: str = "/admin/analytics"
+
 
 @lru_cache
 def get_settings() -> Settings:
