@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminTotalsBlock(BaseModel):
@@ -55,3 +55,80 @@ class AdminMetricsOverview(BaseModel):
     recent_cutoff_utc: datetime = Field(..., description="recent 창의 시작 시각 (UTC, inclusive)")
     totals: AdminTotalsBlock
     recent: AdminRecentBlock
+
+
+class AdminOverview(BaseModel):
+    """개요 대시보드용 핵심 카운트 (GET /admin/overview)."""
+
+    user_count: int = Field(..., ge=0)
+    term_count: int = Field(..., ge=0)
+    saved_term_count: int = Field(..., ge=0)
+    generated_at_utc: datetime = Field(..., description="집계 시각 (UTC)")
+
+
+class AdminUserListItem(BaseModel):
+    """사용자 목록 한 행."""
+
+    id: str = Field(..., description="사용자 ID (문자열)")
+    email: str = Field(..., description="DB 이메일")
+    username: str = Field(
+        ...,
+        description="UserPublic과 동일하게 email과 같은 값",
+    )
+    is_admin: bool = False
+    created_at: datetime
+
+
+class AdminTermListItem(BaseModel):
+    """용어 목록 한 행. 검색 API(TermSearchItem)와 동일한 의미 필드 매핑."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        ser_json_by_alias=True,
+    )
+
+    id: int
+    term: str
+    meaning: str = Field(
+        ...,
+        description="DB `definition`(엑셀 '뜻') — TermSearchItem.meaning 과 동일",
+    )
+    original_meaning: str = Field(
+        default="",
+        serialization_alias="originalMeaning",
+        description="엑셀 '원래 의미'",
+    )
+    example: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminSaveListItem(BaseModel):
+    """전역 단어장 저장 이력 한 행."""
+
+    id: int = Field(..., description="saved_terms.id")
+    user_id: int
+    term_id: int
+    term: str = Field(..., description="용어 표기 (terms.term)")
+    saved_at: datetime = Field(..., description="저장 시각 (saved_terms.created_at)")
+
+
+class AdminUserListResult(BaseModel):
+    items: list[AdminUserListItem]
+    total: int = Field(..., ge=0)
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+
+
+class AdminTermListResult(BaseModel):
+    items: list[AdminTermListItem]
+    total: int = Field(..., ge=0)
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+
+
+class AdminSaveListResult(BaseModel):
+    items: list[AdminSaveListItem]
+    total: int = Field(..., ge=0)
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)

@@ -6,6 +6,8 @@ the same authentication logic via Depends().
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
@@ -25,10 +27,10 @@ from schemas.auth import UserPublic
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-) -> UserPublic:
-    """Validate access token and return current user (temporary)."""
+def _decode_access_token_payload(
+    credentials: HTTPAuthorizationCredentials | None,
+) -> dict[str, Any]:
+    """Bearer 토큰을 검증하고 JWT 페이로드를 반환합니다. 실패 시 401."""
 
     if credentials is None or not credentials.credentials:
         raise HTTPException(
@@ -37,11 +39,9 @@ def get_current_user(
         )
 
     settings = get_settings()
-    token = credentials.credentials
-
     try:
-        payload = decode_token(
-            token=token,
+        return decode_token(
+            token=credentials.credentials,
             secret_key=settings.secret_key,
             algorithm=settings.algorithm,
         )
@@ -51,6 +51,18 @@ def get_current_user(
             detail=AUTH_NOT_AUTHENTICATED,
         )
 
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> UserPublic:
+    """Validate access token and return current user from JWT claims (no DB read).
+
+    구형 토큰·일부 엔드포인트 호환용. ``is_admin`` 등은 발급 시점 클레임 기준입니다.
+    프로필 동기화가 필요하면 :func:`get_current_user_from_db` / ``GET /auth/me`` 를 사용하세요.
+    """
+
+    payload = _decode_access_token_payload(credentials)
+
     user_id = payload.get("sub")
     email = payload.get("email")
     if not user_id or not email:
@@ -59,11 +71,9 @@ def get_current_user(
             detail=AUTH_NOT_AUTHENTICATED,
         )
 
-    # 구형 토큰에는 is_admin이 없을 수 있음 → False
     raw_admin = payload.get("is_admin")
     is_admin = bool(raw_admin) if raw_admin is not None else False
 
-    # Temporary: in later steps, load from DB using user_id.
     return UserPublic(
         id=str(user_id),
         username=str(email),
@@ -71,18 +81,65 @@ def get_current_user(
     )
 
 
+def get_current_user_from_db(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> UserPublic:
+    """Bearer 검증 후 DB에서 사용자를 읽어 반환합니다.
+
+    ``is_admin``·이메일·``created_at`` 은 DB 기준이며 JWT 클레임보다 우선합니다.
+    토큰의 ``sub`` 로 사용자를 찾지 못하면 401입니다.
+    """
+
+    payload = _decode_access_token_payload(credentials)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=AUTH_NOT_AUTHENTICATED,
+        )
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=MSG_INVALID_USER_TOKEN_SUBJECT,
+        ) from exc
+
+    user = db.get(User, uid)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=AUTH_NOT_AUTHENTICATED,
+        )
+
+    return UserPublic(
+        id=str(user.id),
+        username=user.email,
+        created_at=user.created_at,
+        is_admin=bool(user.is_admin),
+    )
+
+
 def require_admin(
-    current_user: UserPublic = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     db: Session = Depends(get_db),
 ) -> UserPublic:
     """인증된 사용자이면서 DB상 관리자인 경우에만 통과합니다.
 
-    JWT의 `is_admin`과 달리 DB 값을 기준으로 하므로, 승격/강등 후에도
-    재로그인 없이는 이전 토큰으로 관리자 API를 쓸 수 없습니다.
+    JWT의 ``is_admin`` 클레임이 아니라 DB ``users.is_admin`` 만 사용합니다.
+    ``sub`` 만 있으면 되며 ``email`` 클레임은 필요하지 않습니다.
     """
 
+    payload = _decode_access_token_payload(credentials)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=AUTH_NOT_AUTHENTICATED,
+        )
     try:
-        uid = int(current_user.id)
+        uid = int(user_id)
     except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -102,4 +159,3 @@ def require_admin(
         created_at=user.created_at,
         is_admin=bool(user.is_admin),
     )
-

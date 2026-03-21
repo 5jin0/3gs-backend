@@ -19,7 +19,15 @@ class UserPublic(BaseModel):
     # DB에서는 email을 쓰지만, 프론트에는 "username" 형태로 노출합니다.
     username: EmailStr = Field(..., examples=["test@pangyopass.com"])
     created_at: Optional[datetime] = Field(None, examples=["2026-03-19T12:34:56Z"])
-    is_admin: bool = Field(False, description="관리자 여부 (JWT 클레임과 동기)")
+    is_admin: bool = Field(
+        False,
+        description=(
+            "관리자 여부. "
+            "POST /auth/login·POST /auth/register 응답의 user에서는 DB `users.is_admin`과 동일합니다. "
+            "GET /auth/me 는 DB 기준으로 갱신된 값입니다. "
+            "JWT 클레임과 다를 수 있으니 클라이언트는 /auth/me 로 동기화하는 것을 권장합니다."
+        ),
+    )
 
 
 class LoginRequest(BaseModel):
@@ -54,6 +62,7 @@ class LoginResponse(BaseModel):
                     "user": {
                         "id": "user_123",
                         "username": "test@pangyopass.com",
+                        "created_at": "2026-03-19T12:34:56Z",
                         "is_admin": False,
                     },
                 }

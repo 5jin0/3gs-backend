@@ -10,16 +10,31 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.messages import MSG_OK
+from app.core.messages import MSG_FETCH_SUCCESS, MSG_OK
 from dependencies.auth import require_admin
 from dependencies.db import get_db
-from schemas.admin import AdminMetricsOverview
+from schemas.admin import (
+    AdminMetricsOverview,
+    AdminOverview,
+    AdminSaveListResult,
+    AdminTermListResult,
+    AdminUserListResult,
+)
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
+from services.admin_lists import (
+    build_admin_overview,
+    list_admin_saves,
+    list_admin_terms,
+    list_admin_users,
+)
 from services.admin_metrics import build_admin_metrics_overview
 from sqlalchemy.orm import Session
 
 AdminUser = Annotated[UserPublic, Depends(require_admin)]
+
+_DEFAULT_LIST_LIMIT = 100
+_MAX_LIST_LIMIT = 500
 
 router = APIRouter(
     prefix="/admin",
@@ -70,3 +85,72 @@ def admin_metrics_overview(
 ) -> ApiResponse[AdminMetricsOverview]:
     overview = build_admin_metrics_overview(db, recent_days=recent_days)
     return ApiResponse(success=True, data=overview, message=MSG_OK)
+
+
+@router.get(
+    "/overview",
+    response_model=ApiResponse[AdminOverview],
+    summary="관리자 개요 (핵심 카운트)",
+    description="비관리자 403, 미인증 401.",
+)
+def admin_overview(_: AdminUser, db: Session = Depends(get_db)) -> ApiResponse[AdminOverview]:
+    data = build_admin_overview(db)
+    return ApiResponse(success=True, data=data, message=MSG_OK)
+
+
+@router.get(
+    "/users",
+    response_model=ApiResponse[AdminUserListResult],
+    summary="사용자 목록",
+)
+def admin_users(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(
+        _DEFAULT_LIST_LIMIT,
+        ge=1,
+        le=_MAX_LIST_LIMIT,
+        description="페이지 크기",
+    ),
+) -> ApiResponse[AdminUserListResult]:
+    result = list_admin_users(db, offset=offset, limit=limit)
+    return ApiResponse(success=True, data=result, message=MSG_FETCH_SUCCESS)
+
+
+@router.get(
+    "/terms",
+    response_model=ApiResponse[AdminTermListResult],
+    summary="용어(사전) 전체 목록",
+)
+def admin_terms(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(
+        _DEFAULT_LIST_LIMIT,
+        ge=1,
+        le=_MAX_LIST_LIMIT,
+    ),
+) -> ApiResponse[AdminTermListResult]:
+    result = list_admin_terms(db, offset=offset, limit=limit)
+    return ApiResponse(success=True, data=result, message=MSG_FETCH_SUCCESS)
+
+
+@router.get(
+    "/saves",
+    response_model=ApiResponse[AdminSaveListResult],
+    summary="전 사용자 단어장 저장 이력",
+)
+def admin_saves(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(
+        _DEFAULT_LIST_LIMIT,
+        ge=1,
+        le=_MAX_LIST_LIMIT,
+    ),
+) -> ApiResponse[AdminSaveListResult]:
+    result = list_admin_saves(db, offset=offset, limit=limit)
+    return ApiResponse(success=True, data=result, message=MSG_FETCH_SUCCESS)

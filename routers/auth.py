@@ -22,7 +22,7 @@ from app.core.messages import (
     MSG_REGISTER_SUCCESS,
 )
 from app.core.security import create_jwt_access_token, hash_password, verify_password
-from dependencies.auth import get_current_user
+from dependencies.auth import get_current_user_from_db
 from dependencies.db import get_db
 from db.base import Base
 from db.models.user_access_event import UserAccessEvent
@@ -40,19 +40,28 @@ logger = logging.getLogger(__name__)
     "/login",
     response_model=ApiResponse[LoginResponse],
     summary="Login (DB-based user authentication)",
+    description=(
+        "성공 시 `data.user`에 `is_admin`(boolean)이 포함되며, "
+        "DB의 `users.is_admin`과 동일한 값입니다."
+    ),
     responses={
         200: {
             "description": "Login success",
             "content": {
                 "application/json": {
                     "example": {
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "token_type": "bearer",
-                        "user": {
-                            "id": "user_1",
-                            "username": "test@pangyopass.com",
-                            "is_admin": False,
+                        "success": True,
+                        "data": {
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "token_type": "bearer",
+                            "user": {
+                                "id": "1",
+                                "username": "test@pangyopass.com",
+                                "created_at": "2026-03-19T12:34:56Z",
+                                "is_admin": False,
+                            },
                         },
+                        "message": "Login succeeded",
                     }
                 }
             },
@@ -72,6 +81,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
     - query user by email from DB
     - verify password hash
     - issue JWT token on success
+
+    `data.user.is_admin`은 DB `users.is_admin`과 동일하게 반환합니다.
     """
 
     db_user = db.scalar(select(User).where(User.email == payload.username_or_email))
@@ -134,16 +145,26 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
 @router.get(
     "/me",
     response_model=ApiResponse[UserPublic],
-    summary="Get current user (temporary)",
+    summary="현재 로그인 사용자 (DB 기준 프로필)",
+    description=(
+        "Bearer 토큰으로 인증합니다. "
+        "`is_admin`·이메일(`username`)·`created_at` 은 **DB** 기준이며 JWT 클레임과 다를 수 있습니다. "
+        "토큰 만료·위조·사용자 삭제 시 401입니다."
+    ),
     responses={
         200: {
             "description": "Current user",
             "content": {
                 "application/json": {
                     "example": {
-                        "id": "user_1",
-                        "username": "test@pangyopass.com",
-                        "is_admin": False,
+                        "success": True,
+                        "data": {
+                            "id": "user_1",
+                            "username": "test@pangyopass.com",
+                            "created_at": "2026-03-19T12:34:56Z",
+                            "is_admin": False,
+                        },
+                        "message": "Fetched successfully",
                     }
                 }
             },
@@ -154,7 +175,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
         },
     },
 )
-def me(current_user: UserPublic = Depends(get_current_user)) -> ApiResponse[UserPublic]:
+def me(current_user: UserPublic = Depends(get_current_user_from_db)) -> ApiResponse[UserPublic]:
     return ApiResponse(success=True, data=current_user, message=MSG_FETCH_SUCCESS)
 
 

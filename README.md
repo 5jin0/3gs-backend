@@ -71,6 +71,7 @@ schemas/
 
 services/
   admin_metrics.py        # 관리자 대시보드 집계
+  admin_lists.py          # 관리자 목록·개요 조회
 
 dependencies/
   auth.py                 # get_current_user, require_admin
@@ -127,7 +128,7 @@ py scripts/seed_terms.py .\path\to\terms.xlsx
 
 - `POST /auth/register` : 회원가입
 - `POST /auth/login` : 로그인(JWT 발급)
-- `GET /auth/me` : 현재 로그인 사용자 조회 (Bearer Token)
+- `GET /auth/me` : 현재 로그인 사용자 조회 (Bearer). **`is_admin` 등은 DB 기준** (JWT보다 우선)
 
 ### 용어 (`/terms`)
 
@@ -140,16 +141,22 @@ DB에서 `users.is_admin = 1`인 계정만 접근 가능합니다. JWT의 `is_ad
 
 - `GET /admin/ping` : 관리자 권한·토큰 스모크 테스트
 - `GET /admin/me` : 현재 관리자 사용자 정보(DB 기준)
+- `GET /admin/overview` : 개요 카운트 (`user_count`, `term_count`, `saved_term_count`)
 - `GET /admin/metrics/overview?recent_days=7` : 대시보드용 누적·최근 N일 집계
+- `GET /admin/users?offset=&limit=` : 사용자 목록
+- `GET /admin/terms?offset=&limit=` : 용어 전체 목록 (검색 API와 맞는 필드 매핑)
+- `GET /admin/saves?offset=&limit=` : 전 사용자 단어장 저장 이력
 
 ## 인증 방식 요약
 
 - 로그인 성공 시 `access_token`(JWT) 발급
 - 보호 API 호출 시 헤더에 Bearer Token 전달
   - `Authorization: Bearer <access_token>`
-- 인증 검증은 `dependencies/auth.py`의 `get_current_user`에서 처리
+- 인증 검증은 `dependencies/auth.py`에서 처리합니다.  
+  - 일부 API는 `get_current_user`(JWT 클레임만 사용, 구형 토큰 호환).  
+  - **`GET /auth/me`는 `get_current_user_from_db`** 로 DB에서 사용자를 읽으며, **`is_admin`·이메일(`username`)·`created_at`은 DB 기준**입니다. JWT 클레임과 다를 수 있으니 **클라이언트는 `/auth/me`로 프로필을 동기화**하는 것을 권장합니다.
+- `POST /auth/login` 응답의 `data.user.is_admin`은 **로그인 시점 DB**와 동일합니다.
 - 관리자 API(`require_admin`)는 JWT의 `is_admin`이 아니라 **DB의 `is_admin`**만 봅니다. DB에서 승격하면 **같은 토큰으로도** 바로 `/admin/*`를 호출할 수 있습니다.
-- 반면 `GET /auth/me`처럼 토큰 페이로드만으로 사용자를 만드는 응답의 `is_admin`은 **발급 시점의 클레임**이라, 화면과 맞추려면 승격·강등 후 **재로그인**이 필요할 수 있습니다.
 
 ## 관리자 계정 만들기 · curl 예시
 
@@ -181,6 +188,10 @@ $h = @{ Authorization = "Bearer $token" }
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/ping" -Headers $h
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/me" -Headers $h
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/overview?recent_days=7" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/overview" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/users?offset=0&limit=50" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/terms?offset=0&limit=50" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/saves?offset=0&limit=50" -Headers $h
 ```
 
 **Bash / curl**
@@ -194,6 +205,10 @@ TOKEN="$(curl -s -X POST http://127.0.0.1:8000/auth/login \
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/ping
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/me
 curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/metrics/overview?recent_days=7"
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/overview
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/users?offset=0&limit=50"
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/terms?offset=0&limit=50"
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/saves?offset=0&limit=50"
 ```
 
 - 일반 사용자(`is_admin = 0`) 토큰으로 `/admin/*`를 호출하면 **403** (`Admin access required`)입니다.
@@ -201,8 +216,10 @@ curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/metrics/o
 
 ## DB 스키마 보강 (기존 `pangyopass.db` 사용 시)
 
-새 컬럼이 모델에만 추가되고 `create_all`은 기존 테이블을 **수정하지 않습니다.**  
-이미 `users` 테이블이 있는 로컬 DB에는 아래처럼 **수동으로 컬럼을 추가**해야 할 수 있습니다.
+새 컬럼이 모델에만 추가되고 `create_all`은 기존 테이블을 **수정하지 않습니다.**
+
+- **SQLite 로컬 개발**: 서버 기동 시 `db/sqlite_migrate.py`가 `users.is_admin` 컬럼이 없으면 **자동으로 `ALTER TABLE`을 한 번 실행**합니다. 수동 실행이 필요 없는 경우가 많습니다.
+- 그래도 직접 적용하려면 아래 SQL을 사용할 수 있습니다.
 
 예: `users.is_admin` (관리자 여부, SQLite)
 
