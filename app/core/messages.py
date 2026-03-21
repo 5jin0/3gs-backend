@@ -3,6 +3,7 @@
 AUTH_NOT_AUTHENTICATED = "Not authenticated"
 AUTH_INVALID_CREDENTIALS = "Invalid email or password"
 AUTH_EMAIL_ALREADY_REGISTERED = "Email already registered"
+AUTH_ADMIN_REQUIRED = "Admin access required"
 
 MSG_OK = "OK"
 MSG_HEALTH_OK = "Server is healthy"
