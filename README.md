@@ -59,15 +59,21 @@ routers/
   api.py                  # 루트(/) 라우터
   health.py               # /health
   auth.py                 # /auth/*
+  admin.py                # /admin/* (관리자 전용)
   terms.py                # /terms/*
+  wordbook.py             # /wordbook/*
 
 schemas/
   common.py               # 공통 응답 래퍼 (success/data/message)
   auth.py                 # 인증 요청/응답 스키마
+  admin.py                # 관리자 응답 스키마
   terms.py                # terms 요청/응답 스키마
 
+services/
+  admin_metrics.py        # 관리자 대시보드 집계
+
 dependencies/
-  auth.py                 # 인증 dependency (get_current_user)
+  auth.py                 # get_current_user, require_admin
   db.py                   # DB dependency (get_db)
 
 db/
@@ -128,12 +134,70 @@ py scripts/seed_terms.py .\path\to\terms.xlsx
 - `GET /terms/search?keyword=...` : 판교어 검색 (현재 더미)
 - `GET /terms/saved` : 사용자 저장 단어 목록 조회
 
+### 관리자 (`/admin`)
+
+DB에서 `users.is_admin = 1`인 계정만 접근 가능합니다. JWT의 `is_admin` 클레임이 아니라 **항상 DB 값**으로 검사합니다.
+
+- `GET /admin/ping` : 관리자 권한·토큰 스모크 테스트
+- `GET /admin/me` : 현재 관리자 사용자 정보(DB 기준)
+- `GET /admin/metrics/overview?recent_days=7` : 대시보드용 누적·최근 N일 집계
+
 ## 인증 방식 요약
 
 - 로그인 성공 시 `access_token`(JWT) 발급
 - 보호 API 호출 시 헤더에 Bearer Token 전달
   - `Authorization: Bearer <access_token>`
 - 인증 검증은 `dependencies/auth.py`의 `get_current_user`에서 처리
+- 관리자 API(`require_admin`)는 JWT의 `is_admin`이 아니라 **DB의 `is_admin`**만 봅니다. DB에서 승격하면 **같은 토큰으로도** 바로 `/admin/*`를 호출할 수 있습니다.
+- 반면 `GET /auth/me`처럼 토큰 페이로드만으로 사용자를 만드는 응답의 `is_admin`은 **발급 시점의 클레임**이라, 화면과 맞추려면 승격·강등 후 **재로그인**이 필요할 수 있습니다.
+
+## 관리자 계정 만들기 · curl 예시
+
+### 1) SQLite에서 특정 이메일을 관리자로 승격
+
+[`sqlite3`](https://www.sqlite.org/cli.html) 또는 DB 브라우저에서 실행:
+
+```sql
+-- 이메일을 본인 환경에 맞게 수정
+UPDATE users SET is_admin = 1 WHERE email = 'test@pangyopass.com';
+```
+
+되돌리기: `UPDATE users SET is_admin = 0 WHERE email = '...';`
+
+`is_admin` 컬럼이 아직 없다면 아래 **「DB 스키마 보강 (기존 pangyopass.db 사용 시)」** 절의 `ALTER TABLE`을 먼저 적용하세요.
+
+### 2) 로그인 후 토큰 받기 (PowerShell)
+
+```powershell
+$body = @{ username = "test@pangyopass.com"; password = "비밀번호" } | ConvertTo-Json
+$r = Invoke-RestMethod -Uri "http://127.0.0.1:8000/auth/login" -Method Post -Body $body -ContentType "application/json"
+$token = $r.data.access_token
+```
+
+### 3) 관리자 API 호출
+
+```powershell
+$h = @{ Authorization = "Bearer $token" }
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/ping" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/me" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/overview?recent_days=7" -Headers $h
+```
+
+**Bash / curl**
+
+```bash
+TOKEN="$(curl -s -X POST http://127.0.0.1:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test@pangyopass.com","password":"YOUR_PASSWORD"}' \
+  | python -c "import sys,json; print(json.load(sys.stdin)['data']['access_token'])")"
+
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/ping
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/me
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/metrics/overview?recent_days=7"
+```
+
+- 일반 사용자(`is_admin = 0`) 토큰으로 `/admin/*`를 호출하면 **403** (`Admin access required`)입니다.
+- Swagger(`http://127.0.0.1:8000/docs`)에서 **Authorize**에 `Bearer <access_token>`을 넣고 동일 엔드포인트를 시험할 수 있습니다.
 
 ## DB 스키마 보강 (기존 `pangyopass.db` 사용 시)
 
@@ -146,7 +210,7 @@ py scripts/seed_terms.py .\path\to\terms.xlsx
 ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
 ```
 
-- `0` = 일반 사용자, `1` = 관리자(추후 `/admin` API에서 사용 예정)
+- `0` = 일반 사용자, `1` = 관리자 (`/admin/*`, `require_admin`)
 - 새로 DB 파일을 비우고 다시 띄우면 `create_all`로 테이블이 새로 만들어지면서 컬럼이 포함됩니다.
 
 ## 현재 구현 상태 및 참고
@@ -157,8 +221,8 @@ ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
 
 ## 추후 확장 예정
 
-- `POST /terms/save` 저장 API
 - 북마크/용어 CRUD 고도화
 - Refresh Token 구조
 - Alembic 마이그레이션 도입
 - 예외 처리 전역 핸들러 고도화
+- (선택) 관리자 API 접근 감사 로그
