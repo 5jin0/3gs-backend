@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -249,3 +250,77 @@ class SearchTimingMetrics(BaseModel):
             "인지부담(이탈 시각 − 입력 시작 시각)과 동일 정의로 사용 가능."
         ),
     )
+
+
+class AccessLoginSummary(BaseModel):
+    """기간 내 접속·로그인 이벤트 요약 (`user_access_events`)."""
+
+    range_start_utc: datetime
+    range_end_utc: datetime
+    login_success_total: int = Field(..., ge=0, description="login_success 행 수")
+    wordbook_view_total: int = Field(..., ge=0, description="wordbook_view 행 수(서비스 접속 프록시)")
+    unique_users_with_login_success: int = Field(
+        ...,
+        ge=0,
+        description="기간 내 login_success 가 1건 이상인 서로 다른 user_id 수",
+    )
+    unique_users_with_wordbook_view: int = Field(
+        ...,
+        ge=0,
+        description="기간 내 wordbook_view 가 1건 이상인 서로 다른 user_id 수",
+    )
+
+
+class RegistrationCohortRow(BaseModel):
+    """가입일(UTC) ISO 주차별 코호트."""
+
+    cohort_id: str = Field(..., description="예: 2026-W11")
+    cohort_label: str = Field(..., description="표시용 라벨")
+    users_registered: int = Field(..., ge=0, description="해당 주에 가입한 사용자 수")
+    reaccess_d7_users: int = Field(
+        ...,
+        ge=0,
+        description="가입 후 7일 이내 login_success 가 2회 이상인 사용자 수",
+    )
+    reaccess_d7_rate: float | None = Field(
+        None,
+        description="reaccess_d7_users / users_registered",
+    )
+
+
+class SearchAnalyticsCohortRow(BaseModel):
+    """SearchAnalyticsEvent.cohort 값별 요약."""
+
+    cohort: str = Field(..., examples=["new_user", "existing_user"])
+    unique_users_with_events: int = Field(
+        ...,
+        ge=0,
+        description="기간 내 해당 cohort 로 이벤트가 1건 이상인 서로 다른 user_id 수",
+    )
+    users_with_login_reaccess: int = Field(
+        ...,
+        ge=0,
+        description="같은 기간에 login_success 가 2건 이상인 사용자 수(재로그인 프록시)",
+    )
+    login_reaccess_rate: float | None = Field(
+        None,
+        description="users_with_login_reaccess / unique_users_with_events",
+    )
+
+
+class CohortReaccessMetrics(BaseModel):
+    """로그인·접속 요약 + 코호트별 재접속률."""
+
+    range_start_utc: datetime
+    range_end_utc: datetime
+    cohort_mode: Literal["registration_week", "search_analytics"]
+    access_login_summary: AccessLoginSummary
+    registration_cohorts: list[RegistrationCohortRow] | None = Field(
+        None,
+        description="cohort_mode=registration_week 일 때만 채움",
+    )
+    search_analytics_cohorts: list[SearchAnalyticsCohortRow] | None = Field(
+        None,
+        description="cohort_mode=search_analytics 일 때만 채움",
+    )
+    aggregation_notes: str = Field(..., description="집계 규칙")

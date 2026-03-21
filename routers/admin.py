@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -22,6 +22,7 @@ from schemas.admin import (
     AdminUserListResult,
     SearchFunnelMetrics,
     SearchTimingMetrics,
+    CohortReaccessMetrics,
 )
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
@@ -34,6 +35,7 @@ from services.admin_lists import (
 from services.admin_metrics import build_admin_metrics_overview
 from services.search_funnel_metrics import build_search_funnel_metrics
 from services.search_timing_metrics import build_search_timing_metrics
+from services.cohort_reaccess_metrics import build_cohort_reaccess_metrics
 from sqlalchemy.orm import Session
 
 AdminUser = Annotated[UserPublic, Depends(require_admin)]
@@ -157,6 +159,49 @@ def admin_search_timing(
             start=start,
             end=end,
             session_gap_seconds=session_gap_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return ApiResponse(success=True, data=data, message=MSG_OK)
+
+
+@router.get(
+    "/metrics/cohort-reaccess",
+    response_model=ApiResponse[CohortReaccessMetrics],
+    summary="로그인·접속 요약 및 코호트별 재접속",
+    description=(
+        "`access_login_summary` 는 항상 동일 기간의 `user_access_events` 집계. "
+        "코호트 블록은 `cohort_mode` 에 따라 하나만 채워짐. 규칙은 `aggregation_notes` 참고."
+    ),
+)
+def admin_cohort_reaccess(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    start: datetime | None = Query(
+        None,
+        description="집계 구간 시작(포함). 생략 시 end 기준 7일 전(UTC).",
+    ),
+    end: datetime | None = Query(
+        None,
+        description="집계 구간 끝(포함). 생략 시 현재 시각(UTC).",
+    ),
+    cohort_mode: Literal["registration_week", "search_analytics"] = Query(
+        "registration_week",
+        description=(
+            "registration_week: 가입일이 구간에 든 사용자를 ISO 주차로 묶고 D7 재로그인률. "
+            "search_analytics: SearchAnalyticsEvent.cohort 별로 구간 내 이벤트 유저 대비 재로그인률."
+        ),
+    ),
+) -> ApiResponse[CohortReaccessMetrics]:
+    try:
+        data = build_cohort_reaccess_metrics(
+            db,
+            start=start,
+            end=end,
+            cohort_mode=cohort_mode,
         )
     except ValueError as exc:
         raise HTTPException(
