@@ -63,6 +63,9 @@ routers/
   terms.py                # /terms/*
   wordbook.py             # /wordbook/*
 
+docs/
+  admin_metrics.md        # 관리자 분석 API·이벤트 계약
+
 schemas/
   common.py               # 공통 응답 래퍼 (success/data/message)
   auth.py                 # 인증 요청/응답 스키마
@@ -143,6 +146,8 @@ py scripts/seed_terms.py .\path\to\terms.xlsx
 
 DB에서 `users.is_admin = 1`인 계정만 접근 가능합니다. JWT의 `is_admin` 클레임이 아니라 **항상 DB 값**으로 검사합니다.
 
+**분석 API 상세·이벤트 타입(`event_type`)·테이블 매핑**은 [`docs/admin_metrics.md`](docs/admin_metrics.md) 를 참고하세요.
+
 - `GET /admin/ping` : 관리자 권한·토큰 스모크 테스트
 - `GET /admin/me` : 현재 관리자 사용자 정보(DB 기준)
 - `GET /admin/overview` : 개요 카운트 (`user_count`, `term_count`, `saved_term_count`)
@@ -201,6 +206,11 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/overview" -Headers $h
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/users?offset=0&limit=50" -Headers $h
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/terms?offset=0&limit=50" -Headers $h
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/saves?offset=0&limit=50" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/search-funnel" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/search-timing" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/cohort-reaccess?cohort_mode=registration_week" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/retention?granularity=day" -Headers $h
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/admin/metrics/user-save-counts?limit=50" -Headers $h
 ```
 
 **Bash / curl**
@@ -218,6 +228,11 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/overview
 curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/users?offset=0&limit=50"
 curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/terms?offset=0&limit=50"
 curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/saves?offset=0&limit=50"
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/metrics/search-funnel
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/admin/metrics/search-timing
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/metrics/cohort-reaccess?cohort_mode=registration_week"
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/metrics/retention?granularity=day"
+curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000/admin/metrics/user-save-counts?limit=50"
 ```
 
 - 일반 사용자(`is_admin = 0`) 토큰으로 `/admin/*`를 호출하면 **403** (`Admin access required`)입니다.
