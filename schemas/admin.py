@@ -324,3 +324,40 @@ class CohortReaccessMetrics(BaseModel):
         description="cohort_mode=search_analytics 일 때만 채움",
     )
     aggregation_notes: str = Field(..., description="집계 규칙")
+
+
+class RetentionCohortRow(BaseModel):
+    """리텐션 매트릭스 한 코호트 행."""
+
+    cohort_id: str = Field(..., description="granularity 에 따라 가입일/주/월 키")
+    cohort_label: str = Field(..., description="표시용")
+    cohort_size: int = Field(..., ge=0, description="코호트에 포함된 가입자 수")
+    retention: dict[str, float] = Field(
+        ...,
+        description='기간 인덱스(문자열 "0","1",...) → 해당 period 에 활동한 유저 비율',
+    )
+
+
+class RetentionMetrics(BaseModel):
+    """가입 코호트 × period 리텐션 (활동=login_success)."""
+
+    range_start_utc: datetime = Field(
+        ...,
+        description="가입일(users.created_at) 필터 구간 시작(포함)",
+    )
+    range_end_utc: datetime = Field(..., description="가입일 필터 구간 끝(포함)")
+    granularity: Literal["day", "week", "month"] = Field(
+        ...,
+        description="코호트 묶음 단위 및 period 길이 정의",
+    )
+    activity_event: str = Field(
+        "login_success",
+        description="활성으로 본 이벤트 타입",
+    )
+    max_periods_included: int = Field(
+        ...,
+        ge=0,
+        description="period 0..max (포함) 까지 계산",
+    )
+    cohorts: list[RetentionCohortRow]
+    aggregation_notes: str = Field(..., description="집계 규칙 상세")

@@ -23,6 +23,7 @@ from schemas.admin import (
     SearchFunnelMetrics,
     SearchTimingMetrics,
     CohortReaccessMetrics,
+    RetentionMetrics,
 )
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
@@ -36,6 +37,7 @@ from services.admin_metrics import build_admin_metrics_overview
 from services.search_funnel_metrics import build_search_funnel_metrics
 from services.search_timing_metrics import build_search_timing_metrics
 from services.cohort_reaccess_metrics import build_cohort_reaccess_metrics
+from services.retention_metrics import build_retention_metrics
 from sqlalchemy.orm import Session
 
 AdminUser = Annotated[UserPublic, Depends(require_admin)]
@@ -202,6 +204,54 @@ def admin_cohort_reaccess(
             start=start,
             end=end,
             cohort_mode=cohort_mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return ApiResponse(success=True, data=data, message=MSG_OK)
+
+
+@router.get(
+    "/metrics/retention",
+    response_model=ApiResponse[RetentionMetrics],
+    summary="일·주·월 코호트 리텐션",
+    description=(
+        "가입일(users.created_at)이 [start,end] 에 든 사용자만 코호트에 포함. "
+        "활성은 `login_success` 로그가 period 정의에 맞는 캘린더/블록에 있는지로 판단. "
+        "`aggregation_notes` 필수 참고."
+    ),
+)
+def admin_retention(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    start: datetime | None = Query(
+        None,
+        description="가입일 필터 시작(포함). 생략 시 end 기준 7일 전(UTC).",
+    ),
+    end: datetime | None = Query(
+        None,
+        description="가입일 필터 끝(포함). 생략 시 현재 시각(UTC).",
+    ),
+    granularity: Literal["day", "week", "month"] = Query(
+        "day",
+        description="코호트 단위 및 period 길이(일/7일블록/30일블록)",
+    ),
+    max_periods: int | None = Query(
+        None,
+        ge=1,
+        le=52,
+        description="retention 키 0..max_periods(포함). 생략 시 day=14, week=8, month=6",
+    ),
+) -> ApiResponse[RetentionMetrics]:
+    try:
+        data = build_retention_metrics(
+            db,
+            start=start,
+            end=end,
+            granularity=granularity,
+            max_periods=max_periods,
         )
     except ValueError as exc:
         raise HTTPException(
