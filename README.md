@@ -135,6 +135,20 @@ py scripts/seed_terms.py .\path\to\terms.xlsx
   - `Authorization: Bearer <access_token>`
 - 인증 검증은 `dependencies/auth.py`의 `get_current_user`에서 처리
 
+## DB 스키마 보강 (기존 `pangyopass.db` 사용 시)
+
+새 컬럼이 모델에만 추가되고 `create_all`은 기존 테이블을 **수정하지 않습니다.**  
+이미 `users` 테이블이 있는 로컬 DB에는 아래처럼 **수동으로 컬럼을 추가**해야 할 수 있습니다.
+
+예: `users.is_admin` (관리자 여부, SQLite)
+
+```sql
+ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+```
+
+- `0` = 일반 사용자, `1` = 관리자(추후 `/admin` API에서 사용 예정)
+- 새로 DB 파일을 비우고 다시 띄우면 `create_all`로 테이블이 새로 만들어지면서 컬럼이 포함됩니다.
+
 ## 현재 구현 상태 및 참고
 
 - DB는 SQLite 기본 (`pangyopass.db`)
