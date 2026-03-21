@@ -102,7 +102,7 @@ def _save_search_lifecycle_event(
 ) -> ApiResponse[SearchLifecycleEventResponse] | JSONResponse:
     Base.metadata.create_all(
         bind=db.get_bind(),
-        tables=[SearchAnalyticsEvent.__table__, RepeatSearchLog.__table__],
+        tables=[SearchAnalyticsEvent.__table__, SearchEvent.__table__, RepeatSearchLog.__table__],
     )
 
     user_id = _resolve_user_id(current_user)
@@ -125,6 +125,15 @@ def _save_search_lifecycle_event(
         keyword=keyword,
     )
     db.add(event)
+    # Keep lifecycle events in search_events too, because admin funnel/UX metrics
+    # aggregate search_complete/search_exit from that table.
+    db.add(
+        SearchEvent(
+            user_id=user_id,
+            event_type=event_type,
+            keyword=keyword,
+        )
+    )
 
     repeat_count: int | None = None
     if event_type == "search_complete":
