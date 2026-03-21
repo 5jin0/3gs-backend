@@ -21,6 +21,7 @@ from schemas.admin import (
     AdminTermListResult,
     AdminUserListResult,
     SearchFunnelMetrics,
+    SearchTimingMetrics,
 )
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
@@ -32,6 +33,7 @@ from services.admin_lists import (
 )
 from services.admin_metrics import build_admin_metrics_overview
 from services.search_funnel_metrics import build_search_funnel_metrics
+from services.search_timing_metrics import build_search_timing_metrics
 from sqlalchemy.orm import Session
 
 AdminUser = Annotated[UserPublic, Depends(require_admin)]
@@ -114,6 +116,48 @@ def admin_search_funnel(
 ) -> ApiResponse[SearchFunnelMetrics]:
     try:
         data = build_search_funnel_metrics(db, start=start, end=end)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return ApiResponse(success=True, data=data, message=MSG_OK)
+
+
+@router.get(
+    "/metrics/search-timing",
+    response_model=ApiResponse[SearchTimingMetrics],
+    summary="검색 이벤트 시간차·이탈(인지부담)",
+    description=(
+        "`search_events` 기반. 세션 분리·지표 정의는 응답의 `aggregation_notes` 및 "
+        "`DistributionStats` 필드 description 과 동일합니다."
+    ),
+)
+def admin_search_timing(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    start: datetime | None = Query(
+        None,
+        description="집계 구간 시작(포함). timezone 없으면 UTC로 간주.",
+    ),
+    end: datetime | None = Query(
+        None,
+        description="집계 구간 끝(포함). 생략 시 현재 시각(UTC).",
+    ),
+    session_gap_seconds: int = Query(
+        300,
+        ge=30,
+        le=86400,
+        description="같은 user+keyword 내 세션 분리 기준(초). 기본 5분",
+    ),
+) -> ApiResponse[SearchTimingMetrics]:
+    try:
+        data = build_search_timing_metrics(
+            db,
+            start=start,
+            end=end,
+            session_gap_seconds=session_gap_seconds,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

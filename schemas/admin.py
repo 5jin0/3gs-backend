@@ -209,3 +209,43 @@ class SearchFunnelMetrics(BaseModel):
     counts: SearchFunnelEventCounts
     distinct_users: SearchFunnelDistinctUsers
     rates: SearchFunnelRates
+
+
+class DistributionStats(BaseModel):
+    """연속형 지표 분포 (초 단위). 표본이 없으면 mean/p50/p90 은 null."""
+
+    n: int = Field(..., ge=0, description="표본 수(세션 또는 쌍 개수)")
+    mean_seconds: float | None = Field(None, description="산술 평균(초)")
+    p50_seconds: float | None = Field(None, description="중앙값(초)")
+    p90_seconds: float | None = Field(None, description="90 백분위(초)")
+
+
+class SearchTimingMetrics(BaseModel):
+    """검색 이벤트 간 시간차·이탈(인지부담 프록시).
+
+    세션 정의·지표 해석은 `aggregation_notes` 참고.
+    """
+
+    range_start_utc: datetime
+    range_end_utc: datetime
+    session_gap_seconds: int = Field(
+        ...,
+        description="동일 user_id+keyword 내에서 이전 이벤트와의 간격이 이 값(초) 초과 시 새 세션",
+    )
+    source_table: str = Field("search_events", description="집계 소스 테이블")
+    sessions_total: int = Field(..., ge=0, description="분리된 세션 수")
+    aggregation_notes: str = Field(
+        ...,
+        description="집계 규칙 요약(클라이언트·문서와 공유)",
+    )
+    click_to_search_start: DistributionStats = Field(
+        ...,
+        description="검색창 클릭(search_click) 후 첫 검색 입력 시작(search_start)까지 경과(초)",
+    )
+    search_start_to_exit: DistributionStats = Field(
+        ...,
+        description=(
+            "검색 입력 시작(search_start) 후 첫 목록 이탈(search_exit)까지 경과(초). "
+            "인지부담(이탈 시각 − 입력 시작 시각)과 동일 정의로 사용 가능."
+        ),
+    )
