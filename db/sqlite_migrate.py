@@ -35,3 +35,13 @@ def patch_sqlite_schema(engine: Engine) -> None:
             logger.info(
                 "sqlite_migrate: added users.is_admin (existing DB patched)"
             )
+
+    # search_events: 기간 집계 쿼리용 (관리자 검색 퍼널 등)
+    if insp.has_table("search_events"):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_search_events_created_at "
+                    "ON search_events (created_at)"
+                )
+            )

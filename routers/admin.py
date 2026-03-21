@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.messages import MSG_FETCH_SUCCESS, MSG_OK
 from dependencies.auth import require_admin
@@ -19,6 +20,7 @@ from schemas.admin import (
     AdminSaveListResult,
     AdminTermListResult,
     AdminUserListResult,
+    SearchFunnelMetrics,
 )
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
@@ -29,6 +31,7 @@ from services.admin_lists import (
     list_admin_users,
 )
 from services.admin_metrics import build_admin_metrics_overview
+from services.search_funnel_metrics import build_search_funnel_metrics
 from sqlalchemy.orm import Session
 
 AdminUser = Annotated[UserPublic, Depends(require_admin)]
@@ -85,6 +88,38 @@ def admin_metrics_overview(
 ) -> ApiResponse[AdminMetricsOverview]:
     overview = build_admin_metrics_overview(db, recent_days=recent_days)
     return ApiResponse(success=True, data=overview, message=MSG_OK)
+
+
+@router.get(
+    "/metrics/search-funnel",
+    response_model=ApiResponse[SearchFunnelMetrics],
+    summary="검색 퍼널 비율·검색 실패율",
+    description=(
+        "`search_events` 테이블만 사용합니다. "
+        "비율·분모 정의는 응답 스키마 필드 description 과 동일합니다. "
+        "`start`/`end` 를 모두 생략하면 UTC 기준 최근 7일입니다."
+    ),
+)
+def admin_search_funnel(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    start: datetime | None = Query(
+        None,
+        description="집계 구간 시작(포함). timezone 없으면 UTC로 간주.",
+    ),
+    end: datetime | None = Query(
+        None,
+        description="집계 구간 끝(포함). 생략 시 현재 시각(UTC).",
+    ),
+) -> ApiResponse[SearchFunnelMetrics]:
+    try:
+        data = build_search_funnel_metrics(db, start=start, end=end)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return ApiResponse(success=True, data=data, message=MSG_OK)
 
 
 @router.get(

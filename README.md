@@ -143,6 +143,7 @@ DB에서 `users.is_admin = 1`인 계정만 접근 가능합니다. JWT의 `is_ad
 - `GET /admin/me` : 현재 관리자 사용자 정보(DB 기준)
 - `GET /admin/overview` : 개요 카운트 (`user_count`, `term_count`, `saved_term_count`)
 - `GET /admin/metrics/overview?recent_days=7` : 대시보드용 누적·최근 N일 집계
+- `GET /admin/metrics/search-funnel?start=&end=` : 검색 퍼널·클릭률·자동완성·실패율 (`search_events` 기간 집계, UTC)
 - `GET /admin/users?offset=&limit=` : 사용자 목록
 - `GET /admin/terms?offset=&limit=` : 용어 전체 목록 (검색 API와 맞는 필드 매핑)
 - `GET /admin/saves?offset=&limit=` : 전 사용자 단어장 저장 이력

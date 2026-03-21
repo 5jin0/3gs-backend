@@ -132,3 +132,80 @@ class AdminSaveListResult(BaseModel):
     total: int = Field(..., ge=0)
     offset: int = Field(..., ge=0)
     limit: int = Field(..., ge=1)
+
+
+class SearchFunnelEventCounts(BaseModel):
+    """`search_events` 기간 내 event_type 건수 (행 단위, 중복 허용)."""
+
+    search_start: int = Field(0, ge=0)
+    search_click: int = Field(0, ge=0)
+    suggestion_select: int = Field(0, ge=0)
+    search_complete: int = Field(0, ge=0)
+    search_exit: int = Field(0, ge=0)
+    other: int = Field(
+        0,
+        ge=0,
+        description="위 알려진 타입 외 event_type 합계(버전 차이 대비)",
+    )
+    total_events: int = Field(0, ge=0, description="기간 내 search_events 전체 행 수")
+
+
+class SearchFunnelDistinctUsers(BaseModel):
+    """기간 내 유저 수(중복 제거)."""
+
+    unique_users_with_any_event: int = Field(
+        ...,
+        ge=0,
+        description="기간 내 search_events 가 1건 이상인 서로 다른 user_id 수",
+    )
+    unique_users_with_search_start: int = Field(
+        ...,
+        ge=0,
+        description="기간 내 search_start 가 1건 이상인 서로 다른 user_id 수",
+    )
+
+
+class SearchFunnelRates(BaseModel):
+    """비율. 분모가 0이면 null. 소수는 반올림된 값."""
+
+    search_start_rate: float | None = Field(
+        None,
+        description=(
+            "검색 시작률: unique_users_with_search_start / unique_users_with_any_event. "
+            "‘검색 이벤트가 있는 유저’ 중 ‘검색 시작 이벤트를 낸 유저’ 비율."
+        ),
+    )
+    search_start_share_of_tracked_events: float | None = Field(
+        None,
+        description="search_start 건수 / total_events (전체 추적 이벤트 중 시작 이벤트 비중)",
+    )
+    search_click_rate: float | None = Field(
+        None,
+        description="검색 클릭률: search_click / search_start (시작 대비 결과 클릭)",
+    )
+    suggestion_select_rate: float | None = Field(
+        None,
+        description="자동완성 제안 클릭률: suggestion_select / search_start",
+    )
+    search_complete_rate: float | None = Field(
+        None,
+        description="검색 완료 비율: search_complete / search_start",
+    )
+    search_failure_rate: float | None = Field(
+        None,
+        description="검색 실패율: 1 - (search_complete / search_start). search_start=0 이면 null",
+    )
+
+
+class SearchFunnelMetrics(BaseModel):
+    """관리자용 검색 퍼널 집계 (MVP: `search_events` 단일 소스)."""
+
+    range_start_utc: datetime = Field(..., description="집계 구간 시작(UTC, 포함)")
+    range_end_utc: datetime = Field(..., description="집계 구간 끝(UTC, 포함)")
+    source_table: str = Field(
+        "search_events",
+        description="집계에 사용한 테이블명 (search_analytics_events 미포함)",
+    )
+    counts: SearchFunnelEventCounts
+    distinct_users: SearchFunnelDistinctUsers
+    rates: SearchFunnelRates
