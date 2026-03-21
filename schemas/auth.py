@@ -19,6 +19,7 @@ class UserPublic(BaseModel):
     # DB에서는 email을 쓰지만, 프론트에는 "username" 형태로 노출합니다.
     username: EmailStr = Field(..., examples=["test@pangyopass.com"])
     created_at: Optional[datetime] = Field(None, examples=["2026-03-19T12:34:56Z"])
+    is_admin: bool = Field(False, description="관리자 여부 (JWT 클레임과 동기)")
 
 
 class LoginRequest(BaseModel):
@@ -50,7 +51,11 @@ class LoginResponse(BaseModel):
                 {
                     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                     "token_type": "bearer",
-                    "user": {"id": "user_123", "username": "test@pangyopass.com"},
+                    "user": {
+                        "id": "user_123",
+                        "username": "test@pangyopass.com",
+                        "is_admin": False,
+                    },
                 }
             ]
         }
@@ -78,7 +83,11 @@ class RegisterResponse(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "user": {"id": "1", "username": "new-user@pangyopass.com"},
+                    "user": {
+                        "id": "1",
+                        "username": "new-user@pangyopass.com",
+                        "is_admin": False,
+                    },
                     "message": "User registered successfully",
                 }
             ]

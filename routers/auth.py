@@ -48,7 +48,11 @@ logger = logging.getLogger(__name__)
                     "example": {
                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                         "token_type": "bearer",
-                        "user": {"id": "user_1", "username": "test@pangyopass.com"},
+                        "user": {
+                            "id": "user_1",
+                            "username": "test@pangyopass.com",
+                            "is_admin": False,
+                        },
                     }
                 }
             },
@@ -95,7 +99,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
         secret_key=settings.secret_key,
         algorithm=settings.algorithm,
         expires_minutes=settings.access_token_expire_minutes,
-        extra_claims={"email": db_user.email},
+        extra_claims={
+            "email": db_user.email,
+            "is_admin": bool(db_user.is_admin),
+        },
     )
 
     # Access-event logging must not break login flow.
@@ -113,7 +120,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
         data=LoginResponse(
             access_token=access_token,
             token_type="bearer",
-            user=UserPublic(id=str(db_user.id), username=db_user.email, created_at=db_user.created_at),
+            user=UserPublic(
+                id=str(db_user.id),
+                username=db_user.email,
+                created_at=db_user.created_at,
+                is_admin=bool(db_user.is_admin),
+            ),
         ),
         message=MSG_LOGIN_SUCCESS,
     )
@@ -128,7 +140,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> ApiResponse[L
             "description": "Current user",
             "content": {
                 "application/json": {
-                    "example": {"id": "user_1", "username": "test@pangyopass.com"}
+                    "example": {
+                        "id": "user_1",
+                        "username": "test@pangyopass.com",
+                        "is_admin": False,
+                    }
                 }
             },
         },
@@ -153,7 +169,11 @@ def me(current_user: UserPublic = Depends(get_current_user)) -> ApiResponse[User
             "content": {
                 "application/json": {
                     "example": {
-                        "user": {"id": "2", "username": "new-user@pangyopass.com"},
+                        "user": {
+                            "id": "2",
+                            "username": "new-user@pangyopass.com",
+                            "is_admin": False,
+                        },
                         "message": "User registered successfully",
                     }
                 }
@@ -192,6 +212,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> ApiResp
                 id=str(new_user.id),
                 username=new_user.email,
                 created_at=new_user.created_at,
+                is_admin=bool(new_user.is_admin),
             ),
             message=MSG_REGISTER_SUCCESS,
         ),

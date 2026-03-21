@@ -52,6 +52,14 @@ def get_current_user(
             detail=AUTH_NOT_AUTHENTICATED,
         )
 
+    # 구형 토큰에는 is_admin이 없을 수 있음 → False
+    raw_admin = payload.get("is_admin")
+    is_admin = bool(raw_admin) if raw_admin is not None else False
+
     # Temporary: in later steps, load from DB using user_id.
-    return UserPublic(id=str(user_id), username=str(email))
+    return UserPublic(
+        id=str(user_id),
+        username=str(email),
+        is_admin=is_admin,
+    )
 
