@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from db.models.saved_term import SavedTerm
@@ -18,11 +18,19 @@ from schemas.admin import (
     AdminTermListResult,
     AdminUserListItem,
     AdminUserListResult,
+    AdminUserSaveCountItem,
+    AdminUserSaveCountResult,
 )
 
 
 def _count_table(db: Session, model: type) -> int:
     return int(db.scalar(select(func.count()).select_from(model)) or 0)
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def build_admin_overview(db: Session) -> AdminOverview:
@@ -114,4 +122,82 @@ def list_admin_saves(db: Session, *, offset: int, limit: int) -> AdminSaveListRe
         total=total,
         offset=offset,
         limit=limit,
+    )
+
+
+def list_user_save_counts(
+    db: Session,
+    *,
+    offset: int,
+    limit: int,
+    saved_from: datetime | None,
+    saved_to: datetime | None,
+) -> AdminUserSaveCountResult:
+    """유저별 saved_terms 행 수. 기간 필터는 saved_terms.created_at 기준."""
+
+    if saved_from is not None and saved_to is not None:
+        sf, st = _ensure_utc(saved_from), _ensure_utc(saved_to)
+        if sf > st:
+            raise ValueError("saved_from must be on or before saved_to")
+
+    cond = []
+    if saved_from is not None:
+        cond.append(SavedTerm.created_at >= _ensure_utc(saved_from))
+    if saved_to is not None:
+        cond.append(SavedTerm.created_at <= _ensure_utc(saved_to))
+
+    total_stmt = select(func.count(func.distinct(SavedTerm.user_id)))
+    if cond:
+        total_stmt = total_stmt.where(and_(*cond))
+    total = int(db.scalar(total_stmt) or 0)
+
+    base = select(
+        SavedTerm.user_id,
+        func.count(SavedTerm.id).label("save_count"),
+        func.min(SavedTerm.created_at).label("first_saved"),
+        func.max(SavedTerm.created_at).label("last_saved"),
+    )
+    if cond:
+        base = base.where(and_(*cond))
+    agg = (
+        base.group_by(SavedTerm.user_id)
+        .order_by(func.count(SavedTerm.id).desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    rows = db.execute(agg).all()
+
+    uids = [int(r[0]) for r in rows]
+    umap: dict[int, User] = {}
+    if uids:
+        umap = {u.id: u for u in db.scalars(select(User).where(User.id.in_(uids))).all()}
+
+    items: list[AdminUserSaveCountItem] = []
+    for r in rows:
+        uid = int(r[0])
+        cnt = int(r[1])
+        first_s = r[2]
+        last_s = r[3]
+        u = umap.get(uid)
+        email = u.email if u is not None else ""
+        items.append(
+            AdminUserSaveCountItem(
+                user_id=uid,
+                email=email,
+                username=email,
+                save_count=cnt,
+                first_saved_at=first_s,
+                last_saved_at=last_s,
+            )
+        )
+
+    return AdminUserSaveCountResult(
+        items=items,
+        total=total,
+        offset=offset,
+        limit=limit,
+        saved_from_utc=_ensure_utc(saved_from) if saved_from is not None else None,
+        saved_to_utc=_ensure_utc(saved_to) if saved_to is not None else None,
+        source_table="saved_terms",
     )

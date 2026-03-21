@@ -361,3 +361,36 @@ class RetentionMetrics(BaseModel):
     )
     cohorts: list[RetentionCohortRow]
     aggregation_notes: str = Field(..., description="집계 규칙 상세")
+
+
+class AdminUserSaveCountItem(BaseModel):
+    """유저별 단어장 저장 건수 (saved_terms 기준)."""
+
+    user_id: int = Field(..., ge=1)
+    email: str
+    username: str = Field(..., description="UserPublic 과 동일하게 email 과 동일 값")
+    save_count: int = Field(..., ge=0, description="필터 구간 내 저장 행 수(또는 전체)")
+    first_saved_at: datetime | None = Field(
+        None,
+        description="필터가 있으면 그 안에서의 최초 저장 시각",
+    )
+    last_saved_at: datetime | None = Field(
+        None,
+        description="필터가 있으면 그 안에서의 마지막 저장 시각",
+    )
+
+
+class AdminUserSaveCountResult(BaseModel):
+    items: list[AdminUserSaveCountItem]
+    total: int = Field(..., ge=0, description="집계 대상 유저 수(저장 1건 이상인 유저)")
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    saved_from_utc: datetime | None = Field(
+        None,
+        description="saved_terms.created_at 하한(포함). null 이면 제한 없음",
+    )
+    saved_to_utc: datetime | None = Field(
+        None,
+        description="saved_terms.created_at 상한(포함). null 이면 제한 없음",
+    )
+    source_table: str = Field("saved_terms", description="집계 소스")

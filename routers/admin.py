@@ -20,6 +20,7 @@ from schemas.admin import (
     AdminSaveListResult,
     AdminTermListResult,
     AdminUserListResult,
+    AdminUserSaveCountResult,
     SearchFunnelMetrics,
     SearchTimingMetrics,
     CohortReaccessMetrics,
@@ -32,6 +33,7 @@ from services.admin_lists import (
     list_admin_saves,
     list_admin_terms,
     list_admin_users,
+    list_user_save_counts,
 )
 from services.admin_metrics import build_admin_metrics_overview
 from services.search_funnel_metrics import build_search_funnel_metrics
@@ -259,6 +261,50 @@ def admin_retention(
             detail=str(exc),
         ) from exc
     return ApiResponse(success=True, data=data, message=MSG_OK)
+
+
+@router.get(
+    "/metrics/user-save-counts",
+    response_model=ApiResponse[AdminUserSaveCountResult],
+    summary="유저별 단어장 저장 횟수",
+    description=(
+        "`saved_terms` 를 user_id 로 그룹화한 건수. "
+        "`saved_from`/`saved_to` 는 `saved_terms.created_at` 필터(포함). "
+        "정렬: 저장 건수 내림차순."
+    ),
+)
+def admin_user_save_counts(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(
+        _DEFAULT_LIST_LIMIT,
+        ge=1,
+        le=_MAX_LIST_LIMIT,
+    ),
+    saved_from: datetime | None = Query(
+        None,
+        description="저장 시각 하한(포함). 없으면 전체 기간",
+    ),
+    saved_to: datetime | None = Query(
+        None,
+        description="저장 시각 상한(포함). 없으면 전체 기간",
+    ),
+) -> ApiResponse[AdminUserSaveCountResult]:
+    try:
+        data = list_user_save_counts(
+            db,
+            offset=offset,
+            limit=limit,
+            saved_from=saved_from,
+            saved_to=saved_to,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return ApiResponse(success=True, data=data, message=MSG_FETCH_SUCCESS)
 
 
 @router.get(
