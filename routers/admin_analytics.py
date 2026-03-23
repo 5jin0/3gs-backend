@@ -15,6 +15,7 @@ from schemas.admin_analytics_frontend import (
     SearchFunnelFrontendData,
     SearchUxFrontendData,
     UserSavedCountsFrontendData,
+    UserWordbookReaccessFrontendData,
 )
 from schemas.auth import UserPublic
 from schemas.common import ApiResponse
@@ -24,6 +25,7 @@ from services.admin_analytics_frontend import (
     build_search_funnel_frontend,
     build_search_ux_frontend,
     build_user_saved_counts_frontend,
+    build_user_wordbook_reaccess_frontend,
 )
 from sqlalchemy.orm import Session
 
@@ -120,6 +122,42 @@ def analytics_user_saved_counts(
     try:
         data = build_user_saved_counts_frontend(
             db,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return ApiResponse(success=True, data=data, message=MSG_OK)
+
+
+@router.get(
+    "/user-wordbook-reaccess",
+    response_model=ApiResponse[UserWordbookReaccessFrontendData],
+    summary="유저별 단어장 조회 횟수/재접속률(프론트용)",
+)
+def analytics_user_wordbook_reaccess(
+    _: AdminUser,
+    db: Session = Depends(get_db),
+    period: Literal["day", "week", "month"] = Query("week"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=500),
+    sort: str = Query(
+        "wordbook_view_desc",
+        description=(
+            "wordbook_view_desc|wordbook_view_asc|"
+            "reaccess_rate_desc|reaccess_rate_asc|"
+            "username_asc|username_desc"
+        ),
+    ),
+) -> ApiResponse[UserWordbookReaccessFrontendData]:
+    try:
+        data = build_user_wordbook_reaccess_frontend(
+            db,
+            period=period,
             page=page,
             page_size=page_size,
             sort=sort,

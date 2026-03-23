@@ -152,7 +152,7 @@ DB에서 `users.is_admin = 1`인 계정만 접근 가능합니다. JWT의 `is_ad
 
 **분석 API 상세·이벤트 타입(`event_type`)·테이블 매핑**은 [`docs/admin_metrics.md`](docs/admin_metrics.md) 를 참고하세요.
 
-- **Next 분석 API** (기본 접두 `/admin/analytics`, 환경변수 `PP_ADMIN_ANALYTICS_PREFIX` 로 변경): `GET .../search-funnel`, `search-ux`, `access-cohorts`, `retention`, `user-saved-counts` — 상세는 [`docs/admin_metrics.md`](docs/admin_metrics.md).
+- **Next 분석 API** (기본 접두 `/admin/analytics`, 환경변수 `PP_ADMIN_ANALYTICS_PREFIX` 로 변경): `GET .../search-funnel`, `search-ux`, `access-cohorts`, `retention`, `user-saved-counts`, `user-wordbook-reaccess` — 상세는 [`docs/admin_metrics.md`](docs/admin_metrics.md).
 - `GET /admin/ping` : 관리자 권한·토큰 스모크 테스트
 - `GET /admin/me` : 현재 관리자 사용자 정보(DB 기준)
 - `GET /admin/overview` : 개요 카운트 (`user_count`, `term_count`, `saved_term_count`)

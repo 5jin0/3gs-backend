@@ -24,6 +24,7 @@
 | GET | `{prefix}/access-cohorts?period=...&group_by=...` | 히트맵 행렬 |
 | GET | `{prefix}/retention?granularity=day\|week\|month` | 리텐션 행렬(가입 코호트: 최근 90일) |
 | GET | `{prefix}/user-saved-counts?page=&page_size=&sort=` | 유저별 저장 횟수 |
+| GET | `{prefix}/user-wordbook-reaccess?period=...&page=&page_size=&sort=` | 유저별 단어장 조회 횟수·재접속률 |
 
 스키마: `schemas/admin_analytics_frontend.py`. 구현: `routers/admin_analytics.py`, `services/admin_analytics_frontend.py`.
 

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from db.models.search_event import SearchEvent
+from db.models.user import User
+from db.models.user_access_event import UserAccessEvent
 
 from schemas.admin_analytics_frontend import (
     HeatmapMatrixData,
@@ -17,6 +20,8 @@ from schemas.admin_analytics_frontend import (
     SearchUxFrontendData,
     UserSavedCountItemFrontend,
     UserSavedCountsFrontendData,
+    UserWordbookReaccessFrontendData,
+    UserWordbookReaccessItemFrontend,
 )
 from services.admin_lists import list_user_save_counts
 from services.cohort_reaccess_metrics import build_cohort_reaccess_metrics
@@ -320,6 +325,134 @@ def build_user_saved_counts_frontend(
     return UserSavedCountsFrontendData(
         items=items,
         total=result.total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def build_user_wordbook_reaccess_frontend(
+    db: Session,
+    *,
+    period: Literal["day", "week", "month"],
+    page: int,
+    page_size: int,
+    sort: str,
+) -> UserWordbookReaccessFrontendData:
+    """유저별 단어장 조회 횟수와 재접속률(조회 이후 재로그인 비율)."""
+
+    start, end = period_to_datetime_range(period)
+    page = max(1, page)
+    page_size = max(1, min(500, page_size))
+
+    view_rows = db.execute(
+        select(
+            UserAccessEvent.user_id,
+            func.count(UserAccessEvent.id).label("view_count"),
+        )
+        .where(
+            UserAccessEvent.event_type == "wordbook_view",
+            UserAccessEvent.created_at >= start,
+            UserAccessEvent.created_at <= end,
+        )
+        .group_by(UserAccessEvent.user_id)
+    ).all()
+
+    if not view_rows:
+        return UserWordbookReaccessFrontendData(
+            items=[],
+            total=0,
+            page=page,
+            page_size=page_size,
+        )
+
+    user_ids = [int(r.user_id) for r in view_rows]
+    view_count_by_user = {int(r.user_id): int(r.view_count) for r in view_rows}
+
+    ev_rows = db.execute(
+        select(
+            UserAccessEvent.user_id,
+            UserAccessEvent.event_type,
+            UserAccessEvent.created_at,
+        )
+        .where(
+            UserAccessEvent.user_id.in_(user_ids),
+            UserAccessEvent.created_at >= start,
+            UserAccessEvent.created_at <= end,
+            UserAccessEvent.event_type.in_(["wordbook_view", "login_success"]),
+        )
+        .order_by(UserAccessEvent.user_id, UserAccessEvent.created_at)
+    ).all()
+
+    views_by_user: dict[int, list[datetime]] = {}
+    logins_by_user: dict[int, list[datetime]] = {}
+    for r in ev_rows:
+        uid = int(r.user_id)
+        ts = r.created_at
+        if r.event_type == "wordbook_view":
+            views_by_user.setdefault(uid, []).append(ts)
+        elif r.event_type == "login_success":
+            logins_by_user.setdefault(uid, []).append(ts)
+
+    users = db.scalars(select(User).where(User.id.in_(user_ids))).all()
+    user_by_id = {int(u.id): u for u in users}
+
+    items: list[UserWordbookReaccessItemFrontend] = []
+    for uid in user_ids:
+        u = user_by_id.get(uid)
+        if u is None:
+            continue
+        views = views_by_user.get(uid, [])
+        logins = logins_by_user.get(uid, [])
+        reaccess_cnt = 0
+        for view_ts in views:
+            idx = bisect_right(logins, view_ts)
+            if idx < len(logins):
+                reaccess_cnt += 1
+        view_count = view_count_by_user.get(uid, 0)
+        rate = round(reaccess_cnt / view_count, 6) if view_count > 0 else None
+        items.append(
+            UserWordbookReaccessItemFrontend(
+                user_id=uid,
+                username=u.email,
+                email=u.email,
+                wordbook_view_count=view_count,
+                reaccess_count=reaccess_cnt,
+                reaccess_rate=rate,
+            )
+        )
+
+    sort_key = sort.strip().lower()
+    if sort_key == "wordbook_view_desc":
+        items.sort(key=lambda x: (x.wordbook_view_count, x.user_id), reverse=True)
+    elif sort_key == "wordbook_view_asc":
+        items.sort(key=lambda x: (x.wordbook_view_count, x.user_id))
+    elif sort_key == "reaccess_rate_desc":
+        items.sort(
+            key=lambda x: ((x.reaccess_rate if x.reaccess_rate is not None else -1.0), x.user_id),
+            reverse=True,
+        )
+    elif sort_key == "reaccess_rate_asc":
+        items.sort(
+            key=lambda x: ((x.reaccess_rate if x.reaccess_rate is not None else 2.0), x.user_id),
+        )
+    elif sort_key == "username_desc":
+        items.sort(key=lambda x: (x.username.lower(), x.user_id), reverse=True)
+    elif sort_key == "username_asc":
+        items.sort(key=lambda x: (x.username.lower(), x.user_id))
+    else:
+        raise ValueError(
+            "sort must be one of: "
+            "wordbook_view_desc, wordbook_view_asc, "
+            "reaccess_rate_desc, reaccess_rate_asc, "
+            "username_asc, username_desc"
+        )
+
+    total = len(items)
+    offset = (page - 1) * page_size
+    paged = items[offset : offset + page_size]
+    return UserWordbookReaccessFrontendData(
+        items=paged,
+        total=total,
         page=page,
         page_size=page_size,
     )

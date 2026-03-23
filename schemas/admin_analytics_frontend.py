@@ -63,3 +63,22 @@ class UserSavedCountsFrontendData(BaseModel):
     total: int = 0
     page: int = 1
     page_size: int = 20
+
+
+class UserWordbookReaccessItemFrontend(BaseModel):
+    user_id: int
+    username: str
+    email: str
+    wordbook_view_count: int = 0
+    reaccess_count: int = 0
+    reaccess_rate: Optional[float] = Field(
+        None,
+        description="reaccess_count / wordbook_view_count (0~1)",
+    )
+
+
+class UserWordbookReaccessFrontendData(BaseModel):
+    items: list[UserWordbookReaccessItemFrontend] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
