@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from db.models.search_event import SearchEvent
 
 from schemas.admin_analytics_frontend import (
     HeatmapMatrixData,
@@ -57,6 +59,46 @@ def _interp_p99(p90: float | None) -> float | None:
     return float(p90) * 1.1
 
 
+def _compute_cognitive_load_index_from_repeat_ratio(
+    db: Session,
+    *,
+    start: datetime,
+    end: datetime,
+) -> float | None:
+    """인지부담지수: 기간 내 '동일 용어 반복 검색 사용자 비율'."""
+
+    total_users = int(
+        db.scalar(
+            select(func.count(func.distinct(SearchEvent.user_id))).where(
+                SearchEvent.created_at >= start,
+                SearchEvent.created_at <= end,
+            )
+        )
+        or 0
+    )
+    if total_users <= 0:
+        return None
+
+    repeated_user_keyword_subq = (
+        select(SearchEvent.user_id, SearchEvent.keyword)
+        .where(
+            SearchEvent.created_at >= start,
+            SearchEvent.created_at <= end,
+        )
+        .group_by(SearchEvent.user_id, SearchEvent.keyword)
+        .having(func.count(SearchEvent.id) >= 2)
+        .subquery()
+    )
+    repeated_users = int(
+        db.scalar(
+            select(func.count(func.distinct(repeated_user_keyword_subq.c.user_id)))
+        )
+        or 0
+    )
+
+    return round(repeated_users / total_users, 6)
+
+
 def build_search_funnel_frontend(
     db: Session,
     *,
@@ -104,12 +146,11 @@ def build_search_ux_frontend(
     if c.search_start > 0:
         abandonment = round(c.search_exit / c.search_start, 6)
 
-    ci: float | None = None
-    if ex.mean_seconds is not None and ct.mean_seconds is not None:
-        ci = min(
-            1.0,
-            float(ex.mean_seconds) / max(0.1, float(ct.mean_seconds) + 0.1),
-        )
+    ci = _compute_cognitive_load_index_from_repeat_ratio(
+        db,
+        start=start,
+        end=end,
+    )
 
     n = ex.n
     return SearchUxFrontendData(
